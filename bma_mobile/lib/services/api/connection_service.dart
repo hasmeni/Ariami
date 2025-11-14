@@ -1,384 +1,281 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../models/api_models.dart';
 import '../../models/server_info.dart';
-import '../../models/connection_response.dart';
-import '../../models/websocket_messages.dart';
+import '../../models/websocket_models.dart';
 import 'api_client.dart';
 import 'websocket_service.dart';
 
-enum ConnectionState {
-  disconnected,
-  connecting,
-  connected,
-  reconnecting,
-  error,
-}
+/// Service for managing server connection and session
+class ConnectionService {
+  // Singleton pattern
+  static final ConnectionService _instance = ConnectionService._internal();
+  factory ConnectionService() => _instance;
+  ConnectionService._internal();
 
-class ConnectionService extends ChangeNotifier {
-  ServerInfo? _serverInfo;
   ApiClient? _apiClient;
-  WebSocketService? _webSocketService;
-  ConnectionState _state = ConnectionState.disconnected;
-  String? _errorMessage;
-
+  ServerInfo? _serverInfo;
+  String? _sessionId;
   Timer? _heartbeatTimer;
-  Timer? _reconnectTimer;
-  int _reconnectAttempts = 0;
-  static const int _maxReconnectAttempts = 3;
-  static const Duration _heartbeatInterval = Duration(seconds: 30);
+  bool _isConnected = false;
 
-  // Stream subscriptions for WebSocket events
-  StreamSubscription<LibraryUpdateMessage>? _libraryUpdatesSubscription;
-  StreamSubscription<NowPlayingMessage>? _nowPlayingSubscription;
-  StreamSubscription<ServerNotificationMessage>? _notificationsSubscription;
+  final WebSocketService _webSocketService = WebSocketService();
 
-  // Getters
-  ServerInfo? get serverInfo => _serverInfo;
+  /// Check if connected to server
+  bool get isConnected => _isConnected;
+
+  /// Get current API client
   ApiClient? get apiClient => _apiClient;
-  WebSocketService? get webSocketService => _webSocketService;
-  ConnectionState get state => _state;
-  String? get errorMessage => _errorMessage;
-  bool get isConnected => _state == ConnectionState.connected;
 
-  ConnectionService() {
-    _loadSavedConnection();
-  }
+  /// Get current server info
+  ServerInfo? get serverInfo => _serverInfo;
 
-  // Load saved connection from shared preferences
-  Future<void> _loadSavedConnection() async {
+  /// Get current session ID
+  String? get sessionId => _sessionId;
+
+  /// Get WebSocket message stream
+  Stream<WsMessage> get webSocketMessages => _webSocketService.messages;
+
+  // ============================================================================
+  // CONNECTION MANAGEMENT
+  // ============================================================================
+
+  /// Connect to server using QR code data
+  Future<void> connectFromQr(String qrData) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final serverInfoJson = prefs.getString('server_info');
-
-      if (serverInfoJson != null) {
-        // We have a saved connection, but don't auto-connect
-        // Just make it available for manual reconnection
-        print('Found saved server info');
-      }
-    } catch (e) {
-      print('Error loading saved connection: $e');
-    }
-  }
-
-  // Save connection to shared preferences
-  Future<void> _saveConnection() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (_serverInfo != null) {
-        await prefs.setString('server_info',
-            '${_serverInfo!.ip}:${_serverInfo!.port}:${_serverInfo!.sessionId}');
-      }
-    } catch (e) {
-      print('Error saving connection: $e');
-    }
-  }
-
-  // Clear saved connection
-  Future<void> _clearSavedConnection() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('server_info');
-    } catch (e) {
-      print('Error clearing saved connection: $e');
-    }
-  }
-
-  // Connect to server
-  Future<bool> connect({
-    required String ip,
-    required int port,
-    required String deviceId,
-    required String deviceName,
-  }) async {
-    print('Attempting to connect to $ip:$port');
-    _setState(ConnectionState.connecting);
-    _reconnectAttempts = 0;
-
-    try {
-      // Create server info and API client
-      _serverInfo = ServerInfo(ip: ip, port: port);
-      _apiClient = ApiClient(serverInfo: _serverInfo!);
-
-      // Test connection with ping
-      final pingSuccess = await _apiClient!.ping();
-      if (!pingSuccess) {
-        _setError('Server not responding');
-        return false;
-      }
-
-      // Connect and get session
-      final response = await _apiClient!.connect(
-        deviceId: deviceId,
-        deviceName: deviceName,
-        appVersion: '1.0.0',
-        platform: Platform.operatingSystem,
+      // Parse QR code JSON
+      final serverInfo = ServerInfo.fromJson(
+        Map<String, dynamic>.from(
+          // ignore: avoid_dynamic_calls
+          const JsonDecoder().convert(qrData) as Map,
+        ),
       );
 
-      if (response == null) {
-        _setError('Failed to establish connection');
-        return false;
-      }
+      await connectToServer(serverInfo);
+    } catch (e) {
+      throw Exception('Invalid QR code format: $e');
+    }
+  }
 
-      // Update server info with session ID
-      _serverInfo = _serverInfo!.copyWith(sessionId: response.sessionId);
-      _apiClient = ApiClient(serverInfo: _serverInfo!);
+  /// Connect to server with ServerInfo
+  Future<void> connectToServer(ServerInfo serverInfo) async {
+    // Create API client
+    _apiClient = ApiClient(serverInfo: serverInfo);
+    _serverInfo = serverInfo;
 
-      // Save connection
-      await _saveConnection();
+    // Test connection with ping
+    try {
+      await _apiClient!.ping();
+    } catch (e) {
+      _apiClient = null;
+      _serverInfo = null;
+      throw Exception('Cannot reach server: $e');
+    }
 
-      // Initialize WebSocket service
-      _webSocketService = WebSocketService();
-      _setupWebSocketListeners();
+    // Send connect request
+    final connectRequest = ConnectRequest(
+      deviceId: await _getDeviceId(),
+      deviceName: await _getDeviceName(),
+      appVersion: '1.0.0',
+      platform: Platform.isAndroid ? 'android' : 'ios',
+    );
 
-      // Connect WebSocket
-      await _connectWebSocket();
+    try {
+      final response = await _apiClient!.connect(connectRequest);
+      _sessionId = response.sessionId;
+      _isConnected = true;
+
+      // Save connection info
+      await _saveConnectionInfo(serverInfo, _sessionId!);
 
       // Start heartbeat
       _startHeartbeat();
 
-      _setState(ConnectionState.connected);
-      print('Connected successfully. Session: ${response.sessionId}');
-      return true;
+      // Connect WebSocket for real-time updates
+      await _webSocketService.connect(serverInfo);
+
+      print('Connected to server: ${serverInfo.name}');
+      print('Session ID: $_sessionId');
     } catch (e) {
-      _setError('Connection error: $e');
-      return false;
+      _apiClient = null;
+      _serverInfo = null;
+      _sessionId = null;
+      throw Exception('Connection failed: $e');
     }
   }
 
-  /// Attempt to automatically reconnect using stored server info
-  /// Used during app startup to restore previous connection
-  Future<bool> attemptAutoReconnect({
-    required String ip,
-    required int port,
-    required String deviceId,
-    required String deviceName,
-  }) async {
-    debugPrint('[ConnectionService] Attempting auto-reconnect to $ip:$port');
-
-    try {
-      // Use the same connect logic
-      return await connect(
-        ip: ip,
-        port: port,
-        deviceId: deviceId,
-        deviceName: deviceName,
-      );
-    } catch (e) {
-      debugPrint('[ConnectionService] Auto-reconnect failed: $e');
-      return false;
-    }
-  }
-
-  // Disconnect from server
+  /// Disconnect from server
   Future<void> disconnect() async {
-    print('Disconnecting from server');
-
-    // Stop timers
-    _stopHeartbeat();
-    _stopReconnect();
-
-    // Disconnect WebSocket
-    await _disconnectWebSocket();
-
-    // Disconnect from server
-    if (_serverInfo?.sessionId != null && _apiClient != null) {
+    if (_apiClient != null && _sessionId != null) {
       try {
-        await _apiClient!.disconnect(_serverInfo!.sessionId!);
+        // Send disconnect request
+        final request = DisconnectRequest(sessionId: _sessionId!);
+        await _apiClient!.disconnect(request);
       } catch (e) {
         print('Error during disconnect: $e');
       }
     }
 
+    // Stop heartbeat
+    _stopHeartbeat();
+
+    // Disconnect WebSocket
+    _webSocketService.disconnect();
+
     // Clear state
-    await _clearSavedConnection();
-    _serverInfo = null;
     _apiClient = null;
-    _webSocketService = null;
-    _setState(ConnectionState.disconnected);
+    _serverInfo = null;
+    _sessionId = null;
+    _isConnected = false;
+
+    // Clear saved connection info
+    await _clearConnectionInfo();
+
+    print('Disconnected from server');
   }
 
-  // Start heartbeat timer
+  /// Try to restore previous connection
+  Future<bool> tryRestoreConnection() async {
+    final prefs = await SharedPreferences.getInstance();
+    final serverJson = prefs.getString('server_info');
+    final sessionId = prefs.getString('session_id');
+
+    if (serverJson == null || sessionId == null) {
+      return false;
+    }
+
+    try {
+      final serverInfo = ServerInfo.fromJson(
+        Map<String, dynamic>.from(
+          // ignore: avoid_dynamic_calls
+          const JsonDecoder().convert(serverJson) as Map,
+        ),
+      );
+
+      _apiClient = ApiClient(serverInfo: serverInfo);
+      _serverInfo = serverInfo;
+      _sessionId = sessionId;
+
+      // Test if connection still valid
+      await _apiClient!.ping();
+
+      _isConnected = true;
+      _startHeartbeat();
+
+      // Reconnect WebSocket
+      await _webSocketService.connect(serverInfo);
+
+      print('Connection restored to: ${serverInfo.name}');
+      return true;
+    } catch (e) {
+      print('Failed to restore connection: $e');
+      await _clearConnectionInfo();
+      return false;
+    }
+  }
+
+  // ============================================================================
+  // HEARTBEAT MECHANISM
+  // ============================================================================
+
+  /// Start heartbeat timer
   void _startHeartbeat() {
     _stopHeartbeat();
-    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) async {
-      await _sendHeartbeat();
-    });
-    print('Heartbeat started');
+
+    _heartbeatTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _sendHeartbeat(),
+    );
   }
 
-  // Stop heartbeat timer
+  /// Stop heartbeat timer
   void _stopHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
   }
 
-  // Send heartbeat ping
+  /// Send heartbeat ping to server
   Future<void> _sendHeartbeat() async {
-    if (_apiClient == null || _state != ConnectionState.connected) {
-      return;
-    }
+    if (_apiClient == null) return;
 
     try {
-      final success = await _apiClient!.ping();
-      if (!success) {
-        print('Heartbeat failed, attempting reconnect');
-        _handleConnectionLost();
-      }
+      await _apiClient!.ping();
+      print('Heartbeat sent');
     } catch (e) {
-      print('Heartbeat error: $e');
-      _handleConnectionLost();
+      print('Heartbeat failed: $e');
+      // Connection lost - try to reconnect
+      await _handleConnectionLoss();
     }
   }
 
-  // Handle connection lost
-  void _handleConnectionLost() {
-    if (_state == ConnectionState.reconnecting) {
-      return; // Already reconnecting
-    }
-
+  /// Handle connection loss and attempt reconnection
+  Future<void> _handleConnectionLoss() async {
+    print('Connection lost - attempting to reconnect...');
+    _isConnected = false;
     _stopHeartbeat();
-    _setState(ConnectionState.reconnecting);
-    _reconnectAttempts = 0;
-    _attemptReconnect();
-  }
 
-  // Attempt to reconnect with exponential backoff
-  void _attemptReconnect() {
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      _setError('Connection lost. Maximum reconnect attempts reached.');
-      return;
-    }
+    // Wait before retry
+    await Future.delayed(const Duration(seconds: 5));
 
-    _reconnectAttempts++;
-    final delay = Duration(seconds: _reconnectAttempts * 2); // Exponential backoff
-
-    print('Reconnect attempt $_reconnectAttempts of $_maxReconnectAttempts in ${delay.inSeconds}s');
-
-    _reconnectTimer = Timer(delay, () async {
-      if (_apiClient == null) return;
-
-      try {
-        final success = await _apiClient!.ping();
-        if (success) {
-          print('Reconnected successfully');
-          _reconnectAttempts = 0;
-          _setState(ConnectionState.connected);
-          _startHeartbeat();
-        } else {
-          _attemptReconnect();
-        }
-      } catch (e) {
-        print('Reconnect error: $e');
-        _attemptReconnect();
-      }
-    });
-  }
-
-  // Stop reconnect timer
-  void _stopReconnect() {
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
-  }
-
-  // Set connection state
-  void _setState(ConnectionState newState) {
-    _state = newState;
-    if (newState == ConnectionState.connected) {
-      _errorMessage = null;
-    }
-    notifyListeners();
-  }
-
-  // Set error state
-  void _setError(String message) {
-    _errorMessage = message;
-    _state = ConnectionState.error;
-    notifyListeners();
-  }
-
-  // ===== WEBSOCKET METHODS =====
-
-  /// Connect to WebSocket server
-  Future<void> _connectWebSocket() async {
-    if (_serverInfo == null || _serverInfo!.sessionId == null) {
-      debugPrint('[ConnectionService] Cannot connect WebSocket: no session');
-      return;
-    }
-
-    if (_webSocketService == null) {
-      debugPrint('[ConnectionService] Cannot connect WebSocket: service not initialized');
-      return;
-    }
-
-    try {
-      final success = await _webSocketService!.connect(
-        wsUrl: _serverInfo!.wsUrl,
-        sessionId: _serverInfo!.sessionId!,
-      );
-
-      if (success) {
-        debugPrint('[ConnectionService] WebSocket connected');
-      } else {
-        debugPrint('[ConnectionService] WebSocket connection failed');
-      }
-    } catch (e) {
-      debugPrint('[ConnectionService] WebSocket connection error: $e');
+    // Try to restore connection
+    final restored = await tryRestoreConnection();
+    if (!restored) {
+      print('Reconnection failed');
+      await _clearConnectionInfo();
+      _apiClient = null;
+      _serverInfo = null;
+      _sessionId = null;
     }
   }
 
-  /// Disconnect from WebSocket server
-  Future<void> _disconnectWebSocket() async {
-    // Cancel subscriptions
-    await _libraryUpdatesSubscription?.cancel();
-    await _nowPlayingSubscription?.cancel();
-    await _notificationsSubscription?.cancel();
+  // ============================================================================
+  // PERSISTENCE
+  // ============================================================================
 
-    _libraryUpdatesSubscription = null;
-    _nowPlayingSubscription = null;
-    _notificationsSubscription = null;
-
-    // Disconnect service
-    await _webSocketService?.disconnect();
+  /// Save connection info to SharedPreferences
+  Future<void> _saveConnectionInfo(ServerInfo serverInfo, String sessionId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('server_info', const JsonEncoder().convert(serverInfo.toJson()));
+    await prefs.setString('session_id', sessionId);
   }
 
-  /// Set up WebSocket event listeners
-  void _setupWebSocketListeners() {
-    if (_webSocketService == null) return;
-
-    // Listen for library updates
-    _libraryUpdatesSubscription = _webSocketService!.libraryUpdates.listen(
-      (message) {
-        debugPrint('[ConnectionService] Library update: ${message.updateType}');
-        // Notify listeners that library was updated
-        // In Phase 5, this will trigger library refresh
-        notifyListeners();
-      },
-    );
-
-    // Listen for now playing updates from other clients
-    _nowPlayingSubscription = _webSocketService!.nowPlaying.listen(
-      (message) {
-        debugPrint('[ConnectionService] Now playing update from ${message.deviceId}');
-        // Future: Update UI to show what other clients are playing
-      },
-    );
-
-    // Listen for server notifications
-    _notificationsSubscription = _webSocketService!.notifications.listen(
-      (message) {
-        debugPrint('[ConnectionService] Server notification [${message.severity}]: ${message.message}');
-        // Future: Show notifications to user
-      },
-    );
+  /// Clear saved connection info
+  Future<void> _clearConnectionInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('server_info');
+    await prefs.remove('session_id');
   }
 
-  @override
-  void dispose() {
-    _stopHeartbeat();
-    _stopReconnect();
-    _disconnectWebSocket();
-    super.dispose();
+  // ============================================================================
+  // DEVICE INFO
+  // ============================================================================
+
+  /// Get unique device ID
+  Future<String> _getDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? deviceId = prefs.getString('device_id');
+
+    if (deviceId == null) {
+      // Generate new device ID
+      deviceId = 'mobile_${DateTime.now().millisecondsSinceEpoch}';
+      await prefs.setString('device_id', deviceId);
+    }
+
+    return deviceId;
+  }
+
+  /// Get device name
+  Future<String> _getDeviceName() async {
+    // Get device model/name
+    // For now, use platform info
+    if (Platform.isAndroid) {
+      return 'Android Device';
+    } else if (Platform.isIOS) {
+      return 'iOS Device';
+    } else {
+      return 'Mobile Device';
+    }
   }
 }

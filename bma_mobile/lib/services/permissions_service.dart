@@ -20,7 +20,15 @@ class PermissionsService {
       // Check Android version and request appropriate permission
       if (await _isAndroid13OrHigher()) {
         // Android 13+ uses granular media permissions
-        return await Permission.photos.request();
+        // Request all media permissions at once
+        final statuses = await [
+          Permission.audio,
+          Permission.photos,
+          Permission.videos,
+        ].request();
+
+        // Return audio permission status (primary for music app)
+        return statuses[Permission.audio] ?? PermissionStatus.denied;
       } else {
         // Android 12 and below use storage permission
         return await Permission.storage.request();
@@ -39,7 +47,7 @@ class PermissionsService {
   Future<PermissionStatus> getStoragePermissionStatus() async {
     if (Platform.isAndroid) {
       if (await _isAndroid13OrHigher()) {
-        return await Permission.photos.status;
+        return await Permission.audio.status;
       } else {
         return await Permission.storage.status;
       }

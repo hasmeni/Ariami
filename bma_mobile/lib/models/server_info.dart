@@ -1,42 +1,44 @@
+/// Server information model for connection
+
 class ServerInfo {
-  final String ip;
+  final String server; // IP address
   final int port;
-  final String? sessionId;
+  final String name; // Server/computer name
+  final String version;
 
   ServerInfo({
-    required this.ip,
+    required this.server,
     required this.port,
-    this.sessionId,
+    required this.name,
+    required this.version,
   });
-
-  String get baseUrl => 'http://$ip:$port';
-  String get wsUrl => 'ws://$ip:$port/ws';
-
-  Map<String, dynamic> toJson() {
-    return {
-      'ip': ip,
-      'port': port,
-      'sessionId': sessionId,
-    };
-  }
 
   factory ServerInfo.fromJson(Map<String, dynamic> json) {
     return ServerInfo(
-      ip: json['ip'],
-      port: json['port'],
-      sessionId: json['sessionId'],
+      server: json['server'] as String,
+      port: json['port'] as int,
+      name: json['name'] as String,
+      version: json['version'] as String,
     );
   }
 
-  ServerInfo copyWith({
-    String? ip,
-    int? port,
-    String? sessionId,
-  }) {
-    return ServerInfo(
-      ip: ip ?? this.ip,
-      port: port ?? this.port,
-      sessionId: sessionId ?? this.sessionId,
-    );
+  Map<String, dynamic> toJson() {
+    return {
+      'server': server,
+      'port': port,
+      'name': name,
+      'version': version,
+    };
+  }
+
+  /// Get the base URL for API requests
+  String get baseUrl => 'http://$server:$port';
+
+  /// Get the WebSocket URL
+  String get wsUrl => 'ws://$server:$port';
+
+  @override
+  String toString() {
+    return 'ServerInfo(server: $server, port: $port, name: $name, version: $version)';
   }
 }

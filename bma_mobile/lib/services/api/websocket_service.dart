@@ -1,190 +1,203 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import '../../models/websocket_messages.dart';
+import '../../models/websocket_models.dart';
+import '../../models/server_info.dart';
 
-/// WebSocket service for real-time communication with desktop server
-/// Handles connection, reconnection, and message routing
-class WebSocketService extends ChangeNotifier {
+/// WebSocket service for real-time updates
+class WebSocketService {
   WebSocketChannel? _channel;
+  StreamSubscription? _subscription;
+  ServerInfo? _serverInfo;
   bool _isConnected = false;
   Timer? _reconnectTimer;
-  int _reconnectAttempts = 0;
-  static const int _maxReconnectAttempts = 3;
-  static const List<int> _reconnectDelays = [2, 4, 6]; // seconds
+  Timer? _pingTimer;
 
-  String? _wsUrl;
-  String? _sessionId;
+  /// Stream controller for incoming messages
+  final StreamController<WsMessage> _messageController =
+      StreamController<WsMessage>.broadcast();
 
-  // Stream controllers for different message types
-  final _libraryUpdatesController =
-      StreamController<LibraryUpdateMessage>.broadcast();
-  final _nowPlayingController =
-      StreamController<NowPlayingMessage>.broadcast();
-  final _notificationsController =
-      StreamController<ServerNotificationMessage>.broadcast();
+  /// Stream of incoming WebSocket messages
+  Stream<WsMessage> get messages => _messageController.stream;
 
-  // Public streams for consumers
-  Stream<LibraryUpdateMessage> get libraryUpdates =>
-      _libraryUpdatesController.stream;
-  Stream<NowPlayingMessage> get nowPlaying => _nowPlayingController.stream;
-  Stream<ServerNotificationMessage> get notifications =>
-      _notificationsController.stream;
-
+  /// Check if WebSocket is connected
   bool get isConnected => _isConnected;
 
+  // ============================================================================
+  // CONNECTION MANAGEMENT
+  // ============================================================================
+
   /// Connect to WebSocket server
-  Future<bool> connect({
-    required String wsUrl,
-    required String sessionId,
-  }) async {
+  Future<void> connect(ServerInfo serverInfo) async {
+    if (_isConnected) {
+      print('WebSocket already connected');
+      return;
+    }
+
+    _serverInfo = serverInfo;
+
     try {
-      _wsUrl = wsUrl;
-      _sessionId = sessionId;
+      final wsUrl = Uri.parse('${serverInfo.wsUrl}/api/ws');
+      print('Connecting to WebSocket: $wsUrl');
 
-      // Add session ID as query parameter
-      final uri = Uri.parse('$wsUrl?session=$sessionId');
+      _channel = WebSocketChannel.connect(wsUrl);
 
-      _channel = WebSocketChannel.connect(uri);
-
-      // Listen for messages
-      _channel!.stream.listen(
-        _onMessage,
-        onError: _onError,
-        onDone: _onDisconnect,
-        cancelOnError: false,
+      // Listen to messages
+      _subscription = _channel!.stream.listen(
+        _handleMessage,
+        onError: _handleError,
+        onDone: _handleDisconnect,
       );
 
       _isConnected = true;
-      _reconnectAttempts = 0;
-      notifyListeners();
+      _startPingTimer();
 
-      debugPrint('[WebSocket] Connected to $wsUrl');
-      return true;
+      print('WebSocket connected');
     } catch (e) {
-      debugPrint('[WebSocket] Connection failed: $e');
-      _isConnected = false;
-      notifyListeners();
-      return false;
+      print('WebSocket connection failed: $e');
+      _scheduleReconnect();
     }
   }
 
-  /// Disconnect from WebSocket server
-  Future<void> disconnect() async {
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
+  /// Disconnect from WebSocket
+  void disconnect() {
+    print('Disconnecting WebSocket');
 
-    await _channel?.sink.close();
+    _stopPingTimer();
+    _stopReconnectTimer();
+
+    _subscription?.cancel();
+    _subscription = null;
+
+    _channel?.sink.close();
     _channel = null;
 
     _isConnected = false;
-    _wsUrl = null;
-    _sessionId = null;
-    _reconnectAttempts = 0;
-
-    notifyListeners();
-    debugPrint('[WebSocket] Disconnected');
+    _serverInfo = null;
   }
 
-  /// Handle incoming messages
-  void _onMessage(dynamic message) {
-    try {
-      final data = jsonDecode(message as String) as Map<String, dynamic>;
-      final wsMessage = WebSocketMessage.fromJson(data);
+  // ============================================================================
+  // MESSAGE HANDLING
+  // ============================================================================
 
-      if (wsMessage == null) {
-        debugPrint('[WebSocket] Unknown message type: $data');
+  /// Handle incoming message
+  void _handleMessage(dynamic rawMessage) {
+    try {
+      final jsonMessage = jsonDecode(rawMessage as String) as Map<String, dynamic>;
+      final message = WsMessage.fromJson(jsonMessage);
+
+      print('WebSocket received: ${message.type}');
+
+      // Handle pong
+      if (message.type == WsMessageType.pong) {
+        // Pong received, connection is alive
         return;
       }
 
-      // Route message to appropriate stream
-      if (wsMessage is LibraryUpdateMessage) {
-        _libraryUpdatesController.add(wsMessage);
-        debugPrint('[WebSocket] Library update: ${wsMessage.updateType}');
-      } else if (wsMessage is NowPlayingMessage) {
-        _nowPlayingController.add(wsMessage);
-        debugPrint('[WebSocket] Now playing: ${wsMessage.songId}');
-      } else if (wsMessage is ServerNotificationMessage) {
-        _notificationsController.add(wsMessage);
-        debugPrint(
-            '[WebSocket] Notification [${wsMessage.severity}]: ${wsMessage.message}');
-      }
+      // Emit message to stream
+      _messageController.add(message);
     } catch (e) {
-      debugPrint('[WebSocket] Message parsing error: $e');
+      print('Error parsing WebSocket message: $e');
     }
   }
 
-  /// Handle WebSocket errors
-  void _onError(dynamic error) {
-    debugPrint('[WebSocket] Error: $error');
+  /// Handle WebSocket error
+  void _handleError(dynamic error) {
+    print('WebSocket error: $error');
     _isConnected = false;
-    notifyListeners();
+    _scheduleReconnect();
   }
 
-  /// Handle disconnection
-  void _onDisconnect() {
-    debugPrint('[WebSocket] Connection closed');
+  /// Handle WebSocket disconnect
+  void _handleDisconnect() {
+    print('WebSocket disconnected');
     _isConnected = false;
-    notifyListeners();
-
-    // Attempt reconnection
-    _attemptReconnect();
+    _scheduleReconnect();
   }
 
-  /// Attempt to reconnect with exponential backoff
-  void _attemptReconnect() {
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      debugPrint(
-          '[WebSocket] Max reconnection attempts reached ($_maxReconnectAttempts)');
-      return;
-    }
+  // ============================================================================
+  // SENDING MESSAGES
+  // ============================================================================
 
-    if (_wsUrl == null || _sessionId == null) {
-      debugPrint('[WebSocket] Cannot reconnect: missing connection info');
-      return;
-    }
-
-    final delay = _reconnectDelays[_reconnectAttempts];
-    debugPrint(
-        '[WebSocket] Reconnecting in $delay seconds (attempt ${_reconnectAttempts + 1}/$_maxReconnectAttempts)');
-
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(Duration(seconds: delay), () async {
-      _reconnectAttempts++;
-      final success = await connect(
-        wsUrl: _wsUrl!,
-        sessionId: _sessionId!,
-      );
-
-      if (!success) {
-        _attemptReconnect();
-      }
-    });
-  }
-
-  /// Send a message to the server (for future use)
-  void sendMessage(WebSocketMessage message) {
-    if (!_isConnected) {
-      debugPrint('[WebSocket] Cannot send message: not connected');
+  /// Send message to server
+  void sendMessage(WsMessage message) {
+    if (!_isConnected || _channel == null) {
+      print('Cannot send message: WebSocket not connected');
       return;
     }
 
     try {
-      final json = jsonEncode(message.toJson());
-      _channel?.sink.add(json);
+      final jsonString = jsonEncode(message.toJson());
+      _channel!.sink.add(jsonString);
     } catch (e) {
-      debugPrint('[WebSocket] Failed to send message: $e');
+      print('Error sending WebSocket message: $e');
     }
   }
 
-  @override
-  void dispose() {
+  /// Send ping to server
+  void _sendPing() {
+    sendMessage(PingMessage());
+  }
+
+  // ============================================================================
+  // PING/PONG MECHANISM
+  // ============================================================================
+
+  /// Start ping timer
+  void _startPingTimer() {
+    _stopPingTimer();
+
+    _pingTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _sendPing(),
+    );
+  }
+
+  /// Stop ping timer
+  void _stopPingTimer() {
+    _pingTimer?.cancel();
+    _pingTimer = null;
+  }
+
+  // ============================================================================
+  // RECONNECTION
+  // ============================================================================
+
+  /// Schedule reconnection attempt
+  void _scheduleReconnect() {
+    if (_serverInfo == null) return;
+
+    _stopReconnectTimer();
+
+    print('Scheduling WebSocket reconnect in 5 seconds...');
+
+    _reconnectTimer = Timer(
+      const Duration(seconds: 5),
+      () => _attemptReconnect(),
+    );
+  }
+
+  /// Attempt to reconnect
+  Future<void> _attemptReconnect() async {
+    if (_serverInfo == null) return;
+
+    print('Attempting WebSocket reconnect...');
+    await connect(_serverInfo!);
+  }
+
+  /// Stop reconnect timer
+  void _stopReconnectTimer() {
     _reconnectTimer?.cancel();
-    _channel?.sink.close();
-    _libraryUpdatesController.close();
-    _nowPlayingController.close();
-    _notificationsController.close();
-    super.dispose();
+    _reconnectTimer = null;
+  }
+
+  // ============================================================================
+  // CLEANUP
+  // ============================================================================
+
+  /// Dispose resources
+  void dispose() {
+    disconnect();
+    _messageController.close();
   }
 }

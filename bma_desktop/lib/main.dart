@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'utils/constants.dart';
-import 'screens/splash_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/tailscale_check_screen.dart';
 import 'screens/folder_selection_screen.dart';
@@ -20,9 +19,8 @@ class MyApp extends StatelessWidget {
       title: 'BMA Desktop',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      home: const SplashScreen(),
+      home: const WelcomeScreen(),
       routes: {
-        '/welcome': (context) => const WelcomeScreen(),
         '/tailscale-check': (context) => const TailscaleCheckScreen(),
         '/folder-selection': (context) => const FolderSelectionScreen(),
         '/connection': (context) => const ConnectionScreen(),

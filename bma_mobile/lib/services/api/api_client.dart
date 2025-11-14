@@ -1,155 +1,176 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../models/api_models.dart';
 import '../../models/server_info.dart';
-import '../../models/connection_response.dart';
 
+/// HTTP API client for BMA server communication
 class ApiClient {
   final ServerInfo serverInfo;
   final Duration timeout;
 
   ApiClient({
     required this.serverInfo,
-    this.timeout = const Duration(seconds: 30),
+    this.timeout = const Duration(seconds: 10),
   });
 
-  String get _baseUrl => serverInfo.baseUrl;
+  /// Base URL for API requests
+  String get baseUrl => '${serverInfo.baseUrl}/api';
 
-  // Connection methods
-  Future<bool> ping() async {
-    try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/api/ping'))
-          .timeout(timeout);
+  // ============================================================================
+  // CONNECTION ENDPOINTS
+  // ============================================================================
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['status'] == 'ok';
-      }
-      return false;
-    } catch (e) {
-      print('Ping failed: $e');
-      return false;
-    }
+  /// Ping server to check connectivity
+  Future<Map<String, dynamic>> ping() async {
+    final response = await _get('/ping');
+    return response;
   }
 
-  Future<ConnectionResponse?> connect({
-    required String deviceId,
-    required String deviceName,
-    required String appVersion,
-    required String platform,
-  }) async {
-    try {
-      final response = await http
-          .post(
-            Uri.parse('$_baseUrl/api/connect'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'deviceId': deviceId,
-              'deviceName': deviceName,
-              'appVersion': appVersion,
-              'platform': platform,
-            }),
-          )
-          .timeout(timeout);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ConnectionResponse.fromJson(data);
-      } else {
-        print('Connect failed: ${response.statusCode} - ${response.body}');
-        return null;
-      }
-    } catch (e) {
-      print('Connect error: $e');
-      return null;
-    }
+  /// Connect to server with device information
+  Future<ConnectResponse> connect(ConnectRequest request) async {
+    final response = await _post('/connect', request.toJson());
+    return ConnectResponse.fromJson(response);
   }
 
-  Future<bool> disconnect(String sessionId) async {
-    try {
-      final response = await http
-          .post(
-            Uri.parse('$_baseUrl/api/disconnect'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'sessionId': sessionId}),
-          )
-          .timeout(timeout);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['status'] == 'disconnected';
-      }
-      return false;
-    } catch (e) {
-      print('Disconnect error: $e');
-      return false;
-    }
+  /// Disconnect from server
+  Future<DisconnectResponse> disconnect(DisconnectRequest request) async {
+    final response = await _post('/disconnect', request.toJson());
+    return DisconnectResponse.fromJson(response);
   }
 
-  // Library methods
-  Future<LibraryResponse?> getLibrary() async {
-    try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/api/library'))
-          .timeout(timeout);
+  // ============================================================================
+  // LIBRARY ENDPOINTS
+  // ============================================================================
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return LibraryResponse.fromJson(data);
-      } else {
-        print('Get library failed: ${response.statusCode}');
-        return null;
-      }
-    } catch (e) {
-      print('Get library error: $e');
-      return null;
-    }
+  /// Get complete music library
+  Future<LibraryResponse> getLibrary() async {
+    final response = await _get('/library');
+    return LibraryResponse.fromJson(response);
   }
 
-  Future<AlbumInfo?> getAlbum(String id) async {
-    try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/api/albums/$id'))
-          .timeout(timeout);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return AlbumInfo.fromJson(data);
-      } else {
-        print('Get album failed: ${response.statusCode}');
-        return null;
-      }
-    } catch (e) {
-      print('Get album error: $e');
-      return null;
-    }
+  /// Get all albums
+  Future<List<AlbumModel>> getAlbums() async {
+    final response = await _get('/albums');
+    final albums = (response['albums'] as List<dynamic>)
+        .map((e) => AlbumModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return albums;
   }
 
-  Future<SongInfo?> getSong(String id) async {
-    try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/api/songs/$id'))
-          .timeout(timeout);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return SongInfo.fromJson(data);
-      } else {
-        print('Get song failed: ${response.statusCode}');
-        return null;
-      }
-    } catch (e) {
-      print('Get song error: $e');
-      return null;
-    }
+  /// Get album details with songs
+  Future<AlbumDetailResponse> getAlbumDetail(String albumId) async {
+    final response = await _get('/albums/$albumId');
+    return AlbumDetailResponse.fromJson(response);
   }
 
-  // Streaming URLs (to be used with audio player)
+  /// Get all songs
+  Future<List<SongModel>> getSongs() async {
+    final response = await _get('/songs');
+    final songs = (response['songs'] as List<dynamic>)
+        .map((e) => SongModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return songs;
+  }
+
+  /// Get song details
+  Future<SongModel> getSong(String songId) async {
+    final response = await _get('/songs/$songId');
+    return SongModel.fromJson(response);
+  }
+
+  // ============================================================================
+  // STREAMING ENDPOINTS
+  // ============================================================================
+
+  /// Get stream URL for a song
   String getStreamUrl(String songId) {
-    return '$_baseUrl/api/stream/$songId';
+    return '$baseUrl/stream/$songId';
   }
 
-  String getArtworkUrl(String albumId) {
-    return '$_baseUrl/api/artwork/$albumId';
+  // ============================================================================
+  // PRIVATE HELPER METHODS
+  // ============================================================================
+
+  /// Perform GET request
+  Future<Map<String, dynamic>> _get(String endpoint) async {
+    try {
+      final uri = Uri.parse('$baseUrl$endpoint');
+      final response = await http.get(uri).timeout(timeout);
+
+      return _handleResponse(response);
+    } catch (e) {
+      throw ApiException(
+        code: ApiErrorCodes.serverError,
+        message: 'Network error: $e',
+      );
+    }
   }
+
+  /// Perform POST request
+  Future<Map<String, dynamic>> _post(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    try {
+      final uri = Uri.parse('$baseUrl$endpoint');
+      final response = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(timeout);
+
+      return _handleResponse(response);
+    } catch (e) {
+      throw ApiException(
+        code: ApiErrorCodes.serverError,
+        message: 'Network error: $e',
+      );
+    }
+  }
+
+  /// Handle HTTP response
+  Map<String, dynamic> _handleResponse(http.Response response) {
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      // Success
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else {
+      // Error response
+      try {
+        final errorJson = jsonDecode(response.body) as Map<String, dynamic>;
+        final errorResponse = ErrorResponse.fromJson(errorJson);
+        throw ApiException(
+          code: errorResponse.error.code,
+          message: errorResponse.error.message,
+          details: errorResponse.error.details,
+        );
+      } catch (e) {
+        // Fallback if error parsing fails
+        throw ApiException(
+          code: ApiErrorCodes.serverError,
+          message: 'HTTP ${response.statusCode}: ${response.reasonPhrase}',
+        );
+      }
+    }
+  }
+}
+
+/// Exception thrown when API call fails
+class ApiException implements Exception {
+  final String code;
+  final String message;
+  final Map<String, dynamic>? details;
+
+  ApiException({
+    required this.code,
+    required this.message,
+    this.details,
+  });
+
+  @override
+  String toString() => 'ApiException($code): $message';
+
+  /// Check if error is a specific type
+  bool isCode(String errorCode) => code == errorCode;
 }

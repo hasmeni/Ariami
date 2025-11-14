@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/server/server_manager.dart';
-import '../services/app_state_service.dart';
+import '../services/server/http_server.dart';
+import '../services/desktop_tailscale_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -11,10 +11,13 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final ServerManager _serverManager = ServerManager();
-  final AppStateService _appStateService = AppStateService();
+  final BmaHttpServer _httpServer = BmaHttpServer();
+  final DesktopTailscaleService _tailscaleService = DesktopTailscaleService();
+
   String? _musicFolderPath;
+  String? _tailscaleIP;
   bool _isLoading = true;
+  int _connectedClients = 0;
 
   @override
   void initState() {
@@ -27,55 +30,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _isLoading = true;
     });
 
-    // Initialize app state service
-    await _appStateService.initialize();
-
     // Load music folder path from shared preferences
     final prefs = await SharedPreferences.getInstance();
     _musicFolderPath = prefs.getString('music_folder_path');
 
-    // Auto-start server if configured
-    await _autoStartServerIfNeeded();
+    // Get Tailscale IP and server status
+    await _updateServerStatus();
 
     setState(() {
       _isLoading = false;
     });
   }
 
-  /// Auto-start server if user preference is enabled
-  Future<void> _autoStartServerIfNeeded() async {
-    // Only auto-start if:
-    // 1. Setup is complete
-    // 2. Auto-start preference is enabled
-    // 3. Server is not already running
-    if (_appStateService.shouldAutoStartServer() && !_serverManager.isRunning) {
-      debugPrint('[Dashboard] Auto-starting server');
+  Future<void> _updateServerStatus() async {
+    // Get Tailscale IP
+    final ip = await _tailscaleService.getTailscaleIp();
 
-      final success = await _serverManager.startServer();
+    // Get connected clients count
+    final clientCount = _httpServer.connectionManager.clientCount;
 
-      if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Server started automatically on ${_serverManager.tailscaleIp}:${_serverManager.port}',
-            ),
-            duration: const Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (!success && mounted) {
-        debugPrint('[Dashboard] Auto-start failed');
-        // Don't show error - user can manually start if needed
-      }
-    }
+    setState(() {
+      _tailscaleIP = ip;
+      _connectedClients = clientCount;
+    });
   }
 
   Future<void> _toggleServer() async {
-    if (_serverManager.isRunning) {
+    if (_httpServer.isRunning) {
       // Stop server
-      await _serverManager.stopServer();
-      setState(() {});
-
+      await _httpServer.stop();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -86,31 +69,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     } else {
       // Start server
-      final success = await _serverManager.startServer();
-
-      if (success) {
-        setState(() {});
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Server started on ${_serverManager.tailscaleIp}:${_serverManager.port}'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      } else {
+      final ip = await _tailscaleService.getTailscaleIp();
+      if (ip == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Failed to start server. Check Tailscale connection.'),
-              backgroundColor: Colors.red,
+              content: Text('Cannot start server: Tailscale not connected'),
               duration: Duration(seconds: 3),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      try {
+        await _httpServer.start(tailscaleIp: ip, port: 8080);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Server started'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to start server: $e'),
+              duration: const Duration(seconds: 3),
+              backgroundColor: Colors.red,
             ),
           );
         }
       }
     }
+
+    await _updateServerStatus();
   }
 
   Widget _buildInfoCard({
@@ -183,22 +179,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 16),
                   _buildInfoCard(
                     title: 'Status',
-                    value: _serverManager.isRunning ? 'Running' : 'Stopped',
-                    icon: _serverManager.isRunning ? Icons.check_circle : Icons.cancel,
-                    valueColor: _serverManager.isRunning ? Colors.green : Colors.red,
+                    value: _httpServer.isRunning ? 'Running' : 'Stopped',
+                    icon: _httpServer.isRunning ? Icons.check_circle : Icons.cancel,
+                    valueColor: _httpServer.isRunning ? Colors.green : Colors.red,
                   ),
+                  const SizedBox(height: 16),
+                  if (_httpServer.isRunning)
+                    _buildInfoCard(
+                      title: 'Connected Clients',
+                      value: _connectedClients.toString(),
+                      icon: Icons.devices,
+                      valueColor: _connectedClients > 0 ? Colors.green : Colors.grey,
+                    ),
                   const SizedBox(height: 16),
                   Center(
                     child: ElevatedButton.icon(
                       onPressed: _toggleServer,
-                      icon: Icon(_serverManager.isRunning ? Icons.stop : Icons.play_arrow),
-                      label: Text(_serverManager.isRunning ? 'Stop Server' : 'Start Server'),
+                      icon: Icon(_httpServer.isRunning ? Icons.stop : Icons.play_arrow),
+                      label: Text(_httpServer.isRunning ? 'Stop Server' : 'Start Server'),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 32,
                           vertical: 16,
                         ),
-                        backgroundColor: _serverManager.isRunning ? Colors.red : Colors.green,
+                        backgroundColor: _httpServer.isRunning ? Colors.red : Colors.green,
                         foregroundColor: Colors.white,
                       ),
                     ),
@@ -222,24 +226,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 16),
                   _buildInfoCard(
                     title: 'Tailscale IP',
-                    value: _serverManager.tailscaleIp ?? 'Not connected',
+                    value: _tailscaleIP ?? 'Not connected',
                     icon: Icons.cloud,
                   ),
-                  if (_serverManager.isRunning) ...[
-                    const SizedBox(height: 16),
-                    _buildInfoCard(
-                      title: 'Server Address',
-                      value: 'http://${_serverManager.tailscaleIp}:${_serverManager.port}',
-                      icon: Icons.link,
-                      valueColor: Colors.green,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildInfoCard(
-                      title: 'Connected Clients',
-                      value: '${_serverManager.server.connectionManager.clientCount}',
-                      icon: Icons.devices,
-                    ),
-                  ],
                   const SizedBox(height: 32),
 
                   // Quick Actions

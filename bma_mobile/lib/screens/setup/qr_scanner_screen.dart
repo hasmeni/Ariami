@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'dart:convert';
-import 'dart:io';
-import 'package:provider/provider.dart';
-import '../../services/app_state_service.dart';
 import '../../services/api/connection_service.dart';
 
 class QRScannerScreen extends StatefulWidget {
@@ -14,6 +10,7 @@ class QRScannerScreen extends StatefulWidget {
 }
 
 class _QRScannerScreenState extends State<QRScannerScreen> {
+  final ConnectionService _connectionService = ConnectionService();
   MobileScannerController cameraController = MobileScannerController();
   bool _isProcessing = false;
   bool _torchEnabled = false;
@@ -32,86 +29,38 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     });
 
     try {
-      // Parse JSON data
-      final data = jsonDecode(code);
+      // Stop the camera to prevent multiple scans
+      await cameraController.stop();
 
-      // Validate required fields
-      if (!data.containsKey('server') || !data.containsKey('port')) {
-        _showError('Invalid QR code format. Please scan a BMA QR code.');
-        return;
-      }
+      // Use connection service to connect from QR code
+      await _connectionService.connectFromQr(code);
 
-      // Extract connection details
-      final server = data['server'] as String;
-      final port = data['port'] as int;
-
-      // Get services
-      final connectionService = Provider.of<ConnectionService>(
-        context,
-        listen: false,
-      );
-      final appStateService = Provider.of<AppStateService>(
-        context,
-        listen: false,
-      );
-
-      // Get or create device ID and name from AppStateService
-      final deviceId = await appStateService.getOrCreateDeviceId();
-      final deviceName = await appStateService.getOrCreateDeviceName();
-
-      // Attempt connection
-      final connected = await connectionService.connect(
-        ip: server,
-        port: port,
-        deviceId: deviceId,
-        deviceName: deviceName,
-      );
-
-      if (connected) {
-        // Save server info to AppStateService
-        await appStateService.saveServerInfo(
-          ip: server,
-          port: port,
-          sessionId: connectionService.serverInfo?.sessionId,
-        );
-
-        // Success! Navigate to permissions screen
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, '/setup/permissions');
-        }
-      } else {
-        _showError(connectionService.errorMessage ??
-            'Could not connect to server. Check your Tailscale connection.');
+      // Success! Navigate to permissions screen
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/setup/permissions');
       }
     } catch (e) {
-      if (e is FormatException) {
-        _showError('Please scan a BMA QR code');
+      // Restart camera on error
+      await cameraController.start();
+
+      // Handle different error types
+      String errorMessage;
+      if (e.toString().contains('Invalid QR code format')) {
+        errorMessage = 'Invalid QR code. Please scan a BMA QR code.';
+      } else if (e.toString().contains('Cannot reach server')) {
+        errorMessage = 'Cannot reach server. Check your Tailscale connection.';
+      } else if (e.toString().contains('Connection failed')) {
+        errorMessage = 'Connection failed. Please try again.';
       } else {
-        _showError('Network error. Check your Tailscale connection.');
+        errorMessage = 'Error: ${e.toString()}';
       }
+      _showError(errorMessage);
     } finally {
       if (mounted) {
         setState(() {
           _isProcessing = false;
         });
       }
-    }
-  }
-
-  Future<String> _getDeviceId() async {
-    // Generate or retrieve a persistent device ID
-    // For simplicity, using a combination of platform info
-    return '${Platform.operatingSystem}_${DateTime.now().millisecondsSinceEpoch}';
-  }
-
-  Future<String> _getDeviceName() async {
-    // Get device name - this could be enhanced to get actual device name
-    if (Platform.isIOS) {
-      return 'iPhone';
-    } else if (Platform.isAndroid) {
-      return 'Android Device';
-    } else {
-      return 'Mobile Device';
     }
   }
 

@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:provider/provider.dart';
 import '../../services/permissions_service.dart';
-import '../../services/app_state_service.dart';
-import 'dart:io';
 
 class PermissionsScreen extends StatefulWidget {
   const PermissionsScreen({super.key});
@@ -17,28 +14,6 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   int _currentStep = 0;
   bool _isProcessing = false;
 
-  // Track permission states
-  PermissionStatus _notificationStatus = PermissionStatus.denied;
-  PermissionStatus _storageStatus = PermissionStatus.denied;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkCurrentPermissions();
-  }
-
-  Future<void> _checkCurrentPermissions() async {
-    final notificationStatus =
-        await _permissionsService.getNotificationPermissionStatus();
-    final storageStatus =
-        await _permissionsService.getStoragePermissionStatus();
-
-    setState(() {
-      _notificationStatus = notificationStatus;
-      _storageStatus = storageStatus;
-    });
-  }
-
   Future<void> _requestNotificationPermission() async {
     setState(() {
       _isProcessing = true;
@@ -47,7 +22,6 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
     final status = await _permissionsService.requestNotificationPermission();
 
     setState(() {
-      _notificationStatus = status;
       _isProcessing = false;
     });
 
@@ -66,7 +40,6 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
     final status = await _permissionsService.requestStoragePermission();
 
     setState(() {
-      _storageStatus = status;
       _isProcessing = false;
     });
 
@@ -159,18 +132,9 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
     );
   }
 
-  Future<void> _finishSetup() async {
-    // Mark setup as complete
-    final appStateService = Provider.of<AppStateService>(
-      context,
-      listen: false,
-    );
-    await appStateService.markSetupComplete();
-
+  void _finishSetup() {
     // Navigate to main app
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/main');
-    }
+    Navigator.pushReplacementNamed(context, '/main');
   }
 
   @override

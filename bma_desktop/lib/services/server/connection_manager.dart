@@ -1,123 +1,104 @@
-import 'dart:async';
+/// Connection manager for tracking connected clients
+class ConnectionManager {
+  final Map<String, ConnectedClient> _clients = {};
 
+  /// Register a new client connection
+  void registerClient(String deviceId, String deviceName) {
+    _clients[deviceId] = ConnectedClient(
+      deviceId: deviceId,
+      deviceName: deviceName,
+      connectedAt: DateTime.now(),
+      lastHeartbeat: DateTime.now(),
+    );
+    print('Client connected: $deviceName ($deviceId)');
+  }
+
+  /// Update client heartbeat timestamp
+  void updateHeartbeat(String deviceId) {
+    final client = _clients[deviceId];
+    if (client != null) {
+      _clients[deviceId] = client.copyWith(lastHeartbeat: DateTime.now());
+    }
+  }
+
+  /// Unregister a client connection
+  void unregisterClient(String deviceId) {
+    final client = _clients.remove(deviceId);
+    if (client != null) {
+      print('Client disconnected: ${client.deviceName} ($deviceId)');
+    }
+  }
+
+  /// Check if a client is connected
+  bool isClientConnected(String deviceId) {
+    return _clients.containsKey(deviceId);
+  }
+
+  /// Get all connected clients
+  List<ConnectedClient> getConnectedClients() {
+    return _clients.values.toList();
+  }
+
+  /// Get client by device ID
+  ConnectedClient? getClient(String deviceId) {
+    return _clients[deviceId];
+  }
+
+  /// Get count of connected clients
+  int get clientCount => _clients.length;
+
+  /// Clean up stale connections (no heartbeat for 60 seconds)
+  void cleanupStaleConnections() {
+    final now = DateTime.now();
+    final staleDeviceIds = <String>[];
+
+    for (final entry in _clients.entries) {
+      final timeSinceHeartbeat = now.difference(entry.value.lastHeartbeat);
+      if (timeSinceHeartbeat.inSeconds > 60) {
+        staleDeviceIds.add(entry.key);
+      }
+    }
+
+    for (final deviceId in staleDeviceIds) {
+      unregisterClient(deviceId);
+    }
+  }
+}
+
+/// Connected client data
 class ConnectedClient {
   final String deviceId;
   final String deviceName;
-  final String sessionId;
-  final String platform;
   final DateTime connectedAt;
-  DateTime lastHeartbeat;
+  final DateTime lastHeartbeat;
 
   ConnectedClient({
     required this.deviceId,
     required this.deviceName,
-    required this.sessionId,
-    required this.platform,
     required this.connectedAt,
     required this.lastHeartbeat,
   });
+
+  ConnectedClient copyWith({
+    String? deviceId,
+    String? deviceName,
+    DateTime? connectedAt,
+    DateTime? lastHeartbeat,
+  }) {
+    return ConnectedClient(
+      deviceId: deviceId ?? this.deviceId,
+      deviceName: deviceName ?? this.deviceName,
+      connectedAt: connectedAt ?? this.connectedAt,
+      lastHeartbeat: lastHeartbeat ?? this.lastHeartbeat,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
       'deviceId': deviceId,
       'deviceName': deviceName,
-      'sessionId': sessionId,
-      'platform': platform,
       'connectedAt': connectedAt.toIso8601String(),
       'lastHeartbeat': lastHeartbeat.toIso8601String(),
     };
-  }
-}
-
-class ConnectionManager {
-  final Map<String, ConnectedClient> _clients = {};
-  Timer? _cleanupTimer;
-
-  ConnectionManager() {
-    _startCleanupTimer();
-  }
-
-  void _startCleanupTimer() {
-    _cleanupTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      _cleanupInactiveClients();
-    });
-  }
-
-  void _cleanupInactiveClients() {
-    final now = DateTime.now();
-    final timeout = const Duration(minutes: 5);
-
-    _clients.removeWhere((sessionId, client) {
-      final inactive = now.difference(client.lastHeartbeat) > timeout;
-      if (inactive) {
-        print('Removing inactive client: ${client.deviceName} (${client.sessionId})');
-      }
-      return inactive;
-    });
-  }
-
-  String addClient({
-    required String deviceId,
-    required String deviceName,
-    required String platform,
-  }) {
-    final sessionId = _generateSessionId();
-    final now = DateTime.now();
-
-    final client = ConnectedClient(
-      deviceId: deviceId,
-      deviceName: deviceName,
-      sessionId: sessionId,
-      platform: platform,
-      connectedAt: now,
-      lastHeartbeat: now,
-    );
-
-    _clients[sessionId] = client;
-    print('Client connected: $deviceName ($sessionId) - Total clients: ${_clients.length}');
-    return sessionId;
-  }
-
-  bool removeClient(String sessionId) {
-    final client = _clients.remove(sessionId);
-    if (client != null) {
-      print('Client disconnected: ${client.deviceName} ($sessionId) - Total clients: ${_clients.length}');
-      return true;
-    }
-    return false;
-  }
-
-  bool updateHeartbeat(String sessionId) {
-    final client = _clients[sessionId];
-    if (client != null) {
-      client.lastHeartbeat = DateTime.now();
-      return true;
-    }
-    return false;
-  }
-
-  ConnectedClient? getClient(String sessionId) {
-    return _clients[sessionId];
-  }
-
-  bool isValidSession(String sessionId) {
-    return _clients.containsKey(sessionId);
-  }
-
-  List<ConnectedClient> getAllClients() {
-    return _clients.values.toList();
-  }
-
-  int get clientCount => _clients.length;
-
-  String _generateSessionId() {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final random = DateTime.now().microsecondsSinceEpoch % 10000;
-    return 'session_${timestamp}_$random';
-  }
-
-  void dispose() {
-    _cleanupTimer?.cancel();
-    _clients.clear();
   }
 }
