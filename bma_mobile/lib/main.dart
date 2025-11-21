@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'utils/constants.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/setup/tailscale_check_screen.dart';
@@ -8,7 +9,16 @@ import 'screens/main_navigation_screen.dart';
 import 'screens/reconnect_screen.dart';
 import 'services/api/connection_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Enable high refresh rate on supported devices
+  try {
+    await FlutterDisplayMode.setHighRefreshRate();
+  } catch (e) {
+    // Ignore errors on unsupported devices
+  }
+
   runApp(const MyApp());
 }
 

@@ -184,150 +184,156 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   }
 
   Widget _buildNotificationPermissionScreen() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Icon
-        Icon(
-          Icons.notifications_active,
-          size: 120,
-          color: Theme.of(context).primaryColor,
-        ),
-        const SizedBox(height: 32),
-
-        // Title
-        const Text(
-          'Notification Permission',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          const SizedBox(height: 16),
+          // Icon
+          Icon(
+            Icons.notifications_active,
+            size: 100,
+            color: Theme.of(context).primaryColor,
           ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
+          const SizedBox(height: 24),
 
-        // Description
-        Text(
-          'Show playback controls in notification panel',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.grey[700],
-            height: 1.5,
+          // Title
+          const Text(
+            'Notification Permission',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
           ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 32),
+          const SizedBox(height: 12),
 
-        // Why we need this
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.blue[50],
-            borderRadius: BorderRadius.circular(12),
+          // Description
+          Text(
+            'Show playback controls in notification panel',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[700],
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Why we need this:',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+          const SizedBox(height: 24),
+
+          // Why we need this
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue[100],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Why we need this:',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue[900],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '• Control playback without opening the app\n'
-                '• See what\'s currently playing\n'
-                '• Quick access to pause/play, skip tracks',
-                style: TextStyle(fontSize: 14, height: 1.5),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Text(
+                  '• Control playback without opening the app\n'
+                  '• See what\'s currently playing\n'
+                  '• Quick access to pause/play, skip tracks',
+                  style: TextStyle(fontSize: 14, height: 1.5, color: Colors.blue[900]),
+                ),
+              ],
+            ),
           ),
-        ),
-        const Spacer(),
+          const SizedBox(height: 32),
 
-        // Buttons
-        _buildActionButtons(
-          onAllow: _requestNotificationPermission,
-          onSkip: _skipCurrentStep,
-          allowText: 'Allow Notifications',
-        ),
-      ],
+          // Buttons
+          _buildActionButtons(
+            onAllow: _requestNotificationPermission,
+            onSkip: _skipCurrentStep,
+            allowText: 'Allow Notifications',
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildStoragePermissionScreen() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Icon
-        Icon(
-          Icons.download_for_offline,
-          size: 120,
-          color: Theme.of(context).primaryColor,
-        ),
-        const SizedBox(height: 32),
-
-        // Title
-        const Text(
-          'Storage Permission',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          const SizedBox(height: 16),
+          // Icon
+          Icon(
+            Icons.download_for_offline,
+            size: 100,
+            color: Theme.of(context).primaryColor,
           ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
+          const SizedBox(height: 24),
 
-        // Description
-        Text(
-          'Download music for offline playback',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.grey[700],
-            height: 1.5,
+          // Title
+          const Text(
+            'Storage Permission',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
           ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 32),
+          const SizedBox(height: 12),
 
-        // Why we need this
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.blue[50],
-            borderRadius: BorderRadius.circular(12),
+          // Description
+          Text(
+            'Download music for offline playback',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[700],
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Why we need this:',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+          const SizedBox(height: 24),
+
+          // Why we need this
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue[100],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Why we need this:',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue[900],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '• Download songs for offline listening\n'
-                '• Save mobile data\n'
-                '• Listen without internet connection',
-                style: TextStyle(fontSize: 14, height: 1.5),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Text(
+                  '• Download songs for offline listening\n'
+                  '• Save mobile data\n'
+                  '• Listen without internet connection',
+                  style: TextStyle(fontSize: 14, height: 1.5, color: Colors.blue[900]),
+                ),
+              ],
+            ),
           ),
-        ),
-        const Spacer(),
+          const SizedBox(height: 32),
 
-        // Buttons
-        _buildActionButtons(
-          onAllow: _requestStoragePermission,
-          onSkip: _skipCurrentStep,
-          allowText: 'Allow Storage Access',
-        ),
-      ],
+          // Buttons
+          _buildActionButtons(
+            onAllow: _requestStoragePermission,
+            onSkip: _skipCurrentStep,
+            allowText: 'Allow Storage Access',
+          ),
+        ],
+      ),
     );
   }
 

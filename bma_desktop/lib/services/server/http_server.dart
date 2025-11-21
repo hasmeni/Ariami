@@ -299,9 +299,9 @@ class BmaHttpServer {
   }
 
   /// Handle get album detail request
-  Response _handleGetAlbumDetail(Request request, String albumId) {
+  Future<Response> _handleGetAlbumDetail(Request request, String albumId) async {
     final baseUrl = 'http://$_tailscaleIp:$_port';
-    final albumDetail = _libraryManager.getAlbumDetail(albumId, baseUrl);
+    final albumDetail = await _libraryManager.getAlbumDetail(albumId, baseUrl);
 
     if (albumDetail == null) {
       return Response.notFound(

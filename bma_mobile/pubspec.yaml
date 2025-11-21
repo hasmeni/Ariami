@@ -50,6 +50,9 @@ dependencies:
   just_audio: ^0.9.39
   audio_service: ^0.18.15
 
+  # Display refresh rate
+  flutter_displaymode: ^0.6.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

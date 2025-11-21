@@ -66,7 +66,7 @@ class PlayerArtwork extends StatelessWidget {
 
       return Image.network(
         albumArtworkUrl,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         width: 350,
         height: 350,
         errorBuilder: (context, error, stackTrace) {

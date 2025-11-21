@@ -215,7 +215,7 @@ class LibraryManager {
   }
 
   /// Get detailed album information with songs
-  Map<String, dynamic>? getAlbumDetail(String albumId, String baseUrl) {
+  Future<Map<String, dynamic>?> getAlbumDetail(String albumId, String baseUrl) async {
     print('[LibraryManager] ========== GET ALBUM DETAIL ==========');
     print('[LibraryManager] Album ID: $albumId');
     print('[LibraryManager] Base URL: $baseUrl');
@@ -239,9 +239,12 @@ class LibraryManager {
     final coverArtUrl = album.artworkPath != null ? '$baseUrl/api/artwork/${album.id}' : null;
     print('[LibraryManager] Generated coverArt URL: $coverArtUrl');
 
-    final songsJson = album.sortedSongs
-        .map((song) => _songToApiJson(song, baseUrl, albumId))
-        .toList();
+    // Build songs with lazily extracted durations
+    final songsJson = <Map<String, dynamic>>[];
+    for (final song in album.sortedSongs) {
+      final songJson = await _songToApiJsonWithDuration(song, baseUrl, albumId);
+      songsJson.add(songJson);
+    }
 
     print('[LibraryManager] Returning ${songsJson.length} songs');
     print('[LibraryManager] =======================================');
@@ -253,6 +256,27 @@ class LibraryManager {
       'year': album.year?.toString(),
       'coverArt': coverArtUrl,
       'songs': songsJson,
+    };
+  }
+
+  /// Convert SongMetadata to API JSON format with lazy duration extraction
+  Future<Map<String, dynamic>> _songToApiJsonWithDuration(SongMetadata song, String baseUrl, String? albumId) async {
+    final songId = _generateSongId(song.filePath);
+
+    // Use cached duration or extract lazily
+    int duration = song.duration ?? 0;
+    if (duration == 0) {
+      final extractedDuration = await getSongDuration(songId);
+      duration = extractedDuration ?? 0;
+    }
+
+    return {
+      'id': songId,
+      'title': song.title ?? _getFilenameWithoutExtension(song.filePath),
+      'artist': song.artist ?? 'Unknown Artist',
+      'albumId': albumId,
+      'duration': duration,
+      'trackNumber': song.trackNumber,
     };
   }
 

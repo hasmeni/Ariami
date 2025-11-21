@@ -21,8 +21,9 @@ class AlbumGridItem extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Album artwork with aspect ratio and shadow
-          Expanded(
+          // Album artwork with fixed square aspect ratio
+          AspectRatio(
+            aspectRatio: 1.0,
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(4),
@@ -40,27 +41,35 @@ class AlbumGridItem extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          // Album title
-          Text(
-            album.title,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
           const SizedBox(height: 4),
-          // Artist name
-          Text(
-            album.artist,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
+          // Album title and artist in expanded container to prevent overflow
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Album title
+                Text(
+                  album.title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                // Artist name
+                Text(
+                  album.artist,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
