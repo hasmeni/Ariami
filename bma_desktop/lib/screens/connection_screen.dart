@@ -28,6 +28,24 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   void initState() {
     super.initState();
     _initializeServer();
+    // Listen for client connections to auto-navigate to dashboard
+    _httpServer.connectionManager.addListener(_onClientConnected);
+  }
+
+  @override
+  void dispose() {
+    _httpServer.connectionManager.removeListener(_onClientConnected);
+    super.dispose();
+  }
+
+  void _onClientConnected() async {
+    if (_httpServer.connectionManager.clientCount > 0 && mounted) {
+      // Mark setup as complete and navigate to dashboard
+      await _stateService.markSetupComplete();
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      }
+    }
   }
 
   Future<void> _initializeServer() async {

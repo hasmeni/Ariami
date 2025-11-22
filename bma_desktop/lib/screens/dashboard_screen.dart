@@ -26,17 +26,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadData();
     // Listen for library scan completion
     _httpServer.libraryManager.addScanCompleteListener(_onLibraryScanComplete);
+    // Listen for client connection changes
+    _httpServer.connectionManager.addListener(_onClientConnectionChanged);
   }
 
   @override
   void dispose() {
     _httpServer.libraryManager.removeScanCompleteListener(_onLibraryScanComplete);
+    _httpServer.connectionManager.removeListener(_onClientConnectionChanged);
     super.dispose();
   }
 
   void _onLibraryScanComplete() {
     if (mounted) {
       setState(() {});
+    }
+  }
+
+  void _onClientConnectionChanged() {
+    if (mounted) {
+      setState(() {
+        _connectedClients = _httpServer.connectionManager.clientCount;
+      });
     }
   }
 

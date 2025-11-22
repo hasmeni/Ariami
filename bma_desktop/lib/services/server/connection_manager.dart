@@ -1,6 +1,24 @@
 /// Connection manager for tracking connected clients
 class ConnectionManager {
   final Map<String, ConnectedClient> _clients = {};
+  final List<void Function()> _listeners = [];
+
+  /// Add a listener for connection changes
+  void addListener(void Function() listener) {
+    _listeners.add(listener);
+  }
+
+  /// Remove a listener
+  void removeListener(void Function() listener) {
+    _listeners.remove(listener);
+  }
+
+  /// Notify all listeners of changes
+  void _notifyListeners() {
+    for (final listener in _listeners) {
+      listener();
+    }
+  }
 
   /// Register a new client connection
   void registerClient(String deviceId, String deviceName) {
@@ -11,6 +29,7 @@ class ConnectionManager {
       lastHeartbeat: DateTime.now(),
     );
     print('Client connected: $deviceName ($deviceId)');
+    _notifyListeners();
   }
 
   /// Update client heartbeat timestamp
@@ -26,6 +45,7 @@ class ConnectionManager {
     final client = _clients.remove(deviceId);
     if (client != null) {
       print('Client disconnected: ${client.deviceName} ($deviceId)');
+      _notifyListeners();
     }
   }
 
@@ -49,8 +69,12 @@ class ConnectionManager {
 
   /// Clear all connected clients (used when server stops)
   void clearAll() {
+    final hadClients = _clients.isNotEmpty;
     _clients.clear();
     print('All clients cleared from connection manager');
+    if (hadClients) {
+      _notifyListeners();
+    }
   }
 
   /// Clean up stale connections (no heartbeat for 60 seconds)
