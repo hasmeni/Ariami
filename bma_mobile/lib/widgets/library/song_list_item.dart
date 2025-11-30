@@ -10,71 +10,91 @@ import '../../services/api/connection_service.dart';
 /// Displays song title, artist, and duration in a list row
 class SongListItem extends StatelessWidget {
   final SongModel song;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final bool isDownloaded;
+  final bool isAvailable;
 
   const SongListItem({
     super.key,
     required this.song,
-    required this.onTap,
+    this.onTap,
     this.onLongPress,
+    this.isDownloaded = false,
+    this.isAvailable = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-        child: Row(
-          children: [
-            // Song info (title and artist)
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Song title
-                  Text(
-                    song.title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
+    // Apply opacity when song is not available (offline and not downloaded)
+    final opacity = isAvailable ? 1.0 : 0.5;
+
+    return Opacity(
+      opacity: opacity,
+      child: InkWell(
+        onTap: isAvailable ? onTap : null,
+        onLongPress: onLongPress,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          child: Row(
+            children: [
+              // Download indicator
+              if (isDownloaded) ...[
+                Icon(
+                  Icons.download_done,
+                  size: 16,
+                  color: Colors.green[600],
+                ),
+                const SizedBox(width: 8),
+              ],
+              // Song info (title and artist)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Song title
+                    Text(
+                      song.title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: isAvailable ? null : Colors.grey,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  // Artist name
-                  Text(
-                    song.artist,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
+                    const SizedBox(height: 4),
+                    // Artist name
+                    Text(
+                      song.artist,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 16),
-            // Duration
-            Text(
-              _formatDuration(song.duration),
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
+              const SizedBox(width: 16),
+              // Duration
+              Text(
+                _formatDuration(song.duration),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
               ),
-            ),
-            // Overflow menu button
-            IconButton(
-              icon: const Icon(Icons.more_vert),
-              onPressed: () => _showSongMenu(context),
-              padding: const EdgeInsets.all(8),
-              constraints: const BoxConstraints(),
-            ),
-          ],
+              // Overflow menu button
+              IconButton(
+                icon: const Icon(Icons.more_vert),
+                onPressed: () => _showSongMenu(context),
+                padding: const EdgeInsets.all(8),
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -99,10 +119,12 @@ class SongListItem extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.play_arrow),
                 title: const Text('Play'),
-                onTap: () {
-                  Navigator.pop(context);
-                  onTap();
-                },
+                onTap: onTap != null
+                    ? () {
+                        Navigator.pop(context);
+                        onTap?.call();
+                      }
+                    : null,
               ),
               ListTile(
                 leading: const Icon(Icons.skip_next),
@@ -213,13 +235,10 @@ class SongListItem extends StatelessWidget {
       songId: song.id,
       title: song.title,
       artist: song.artist,
+      albumId: song.albumId,
       albumArt: '',
       downloadUrl: downloadUrl,
       totalBytes: 0, // Will be determined during download
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added to downloads: ${song.title}')),
     );
   }
 }

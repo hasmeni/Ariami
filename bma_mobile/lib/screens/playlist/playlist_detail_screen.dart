@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../models/api_models.dart';
 import '../../models/song.dart';
+import '../../models/download_task.dart';
 import '../../services/api/connection_service.dart';
 import '../../services/playlist_service.dart';
 import '../../services/playback_manager.dart';
+import '../../services/offline/offline_playback_service.dart';
+import '../../services/download/download_manager.dart';
 import 'add_to_playlist_screen.dart';
 
 /// Helper to convert SongModel to Song with required placeholder values
@@ -38,16 +41,20 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   final PlaylistService _playlistService = PlaylistService();
   final ConnectionService _connectionService = ConnectionService();
   final PlaybackManager _playbackManager = PlaybackManager();
+  final OfflinePlaybackService _offlineService = OfflinePlaybackService();
+  final DownloadManager _downloadManager = DownloadManager();
 
   PlaylistModel? _playlist;
   List<SongModel> _songs = [];
   bool _isLoading = true;
   String? _errorMessage;
   bool _isReorderMode = false;
+  Set<String> _downloadedSongIds = {};
 
   @override
   void initState() {
     super.initState();
+    _loadDownloadedSongs();
     _loadPlaylist();
     _playlistService.addListener(_onPlaylistsChanged);
   }
@@ -61,6 +68,22 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   void _onPlaylistsChanged() {
     // Only do a lightweight update - don't show loading state
     _refreshPlaylistData();
+  }
+
+  /// Load downloaded song IDs
+  void _loadDownloadedSongs() {
+    final queue = _downloadManager.queue;
+    final downloadedIds = <String>{};
+
+    for (final task in queue) {
+      if (task.status == DownloadStatus.completed) {
+        downloadedIds.add(task.songId);
+      }
+    }
+
+    setState(() {
+      _downloadedSongIds = downloadedIds;
+    });
   }
 
   /// Refresh playlist data without showing loading indicator
@@ -188,7 +211,25 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   Future<void> _playAll() async {
     if (_songs.isEmpty) return;
 
-    final songs = _songs.map(_songModelToSong).toList();
+    // Filter for offline mode
+    final isOffline = _offlineService.isOffline;
+    final songsToPlay = isOffline
+        ? _songs.where((s) => _downloadedSongIds.contains(s.id)).toList()
+        : _songs;
+
+    if (songsToPlay.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No downloaded songs available'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final songs = songsToPlay.map(_songModelToSong).toList();
     await _playbackManager.playSongs(songs, startIndex: 0);
   }
 
@@ -196,14 +237,47 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   Future<void> _shuffleAll() async {
     if (_songs.isEmpty) return;
 
-    final songs = _songs.map(_songModelToSong).toList();
+    // Filter for offline mode
+    final isOffline = _offlineService.isOffline;
+    final songsToPlay = isOffline
+        ? _songs.where((s) => _downloadedSongIds.contains(s.id)).toList()
+        : _songs;
+
+    if (songsToPlay.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No downloaded songs available'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final songs = songsToPlay.map(_songModelToSong).toList();
     await _playbackManager.playShuffled(songs);
   }
 
   /// Play a specific track
   Future<void> _playTrack(SongModel track, int index) async {
-    final songs = _songs.map(_songModelToSong).toList();
-    await _playbackManager.playSongs(songs, startIndex: index);
+    // Filter for offline mode
+    final isOffline = _offlineService.isOffline;
+    final songsToPlay = isOffline
+        ? _songs.where((s) => _downloadedSongIds.contains(s.id)).toList()
+        : _songs;
+
+    // Find the index of the clicked track in the filtered list
+    int startIndex;
+    if (isOffline) {
+      startIndex = songsToPlay.indexWhere((s) => s.id == track.id);
+      if (startIndex == -1) startIndex = 0;
+    } else {
+      startIndex = index;
+    }
+
+    final songs = songsToPlay.map(_songModelToSong).toList();
+    await _playbackManager.playSongs(songs, startIndex: startIndex);
   }
 
   /// Edit playlist name/description
@@ -716,35 +790,72 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
 
   /// Normal song item with album artwork
   Widget _buildSongItem(SongModel song, int index) {
-    return Dismissible(
-      key: ValueKey('dismiss_${song.id}'),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        color: Colors.red,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 16),
-        child: const Icon(Icons.delete, color: Colors.white),
+    final isDownloaded = _downloadedSongIds.contains(song.id);
+    final isOffline = _offlineService.isOffline;
+    final isAvailable = !isOffline || isDownloaded;
+    final opacity = isAvailable ? 1.0 : 0.4;
+
+    return Opacity(
+      opacity: opacity,
+      child: Dismissible(
+        key: ValueKey('dismiss_${song.id}'),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          color: Colors.red,
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 16),
+          child: const Icon(Icons.delete, color: Colors.white),
+        ),
+        onDismissed: (_) => _removeSong(song.id),
+        child: ListTile(
+          leading: _buildAlbumArtWithBadge(song, isDownloaded),
+          title: Text(
+            song.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: isAvailable ? null : Colors.grey,
+            ),
+          ),
+          subtitle: Text(
+            song.artist,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+          trailing: Text(
+            _formatDuration(song.duration),
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+          onTap: isAvailable ? () => _playTrack(song, index) : null,
+        ),
       ),
-      onDismissed: (_) => _removeSong(song.id),
-      child: ListTile(
-        leading: _buildAlbumArt(song),
-        title: Text(
-          song.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          song.artist,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: Colors.grey[600]),
-        ),
-        trailing: Text(
-          _formatDuration(song.duration),
-          style: TextStyle(color: Colors.grey[600]),
-        ),
-        onTap: () => _playTrack(song, index),
-      ),
+    );
+  }
+
+  /// Build album art with download badge
+  Widget _buildAlbumArtWithBadge(SongModel song, bool isDownloaded) {
+    return Stack(
+      children: [
+        _buildAlbumArt(song),
+        if (isDownloaded)
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: Colors.green[600],
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.download_done,
+                size: 10,
+                color: Colors.white,
+              ),
+            ),
+          ),
+      ],
     );
   }
 

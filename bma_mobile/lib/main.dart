@@ -11,6 +11,8 @@ import 'screens/main_navigation_screen.dart';
 import 'screens/reconnect_screen.dart';
 import 'services/api/connection_service.dart';
 import 'services/audio/audio_handler.dart';
+import 'services/offline/offline_playback_service.dart';
+import 'services/download/download_manager.dart';
 
 // Global audio handler instance - accessible throughout the app
 // Nullable because initialization might fail on some devices
@@ -83,6 +85,8 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final ConnectionService _connectionService = ConnectionService();
+  final OfflinePlaybackService _offlineService = OfflinePlaybackService();
+  final DownloadManager _downloadManager = DownloadManager();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _isLoading = true;
   Widget? _initialScreen;
@@ -91,8 +95,18 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
+    _initializeServices();
     _determineInitialScreen();
     _listenToConnectionChanges();
+  }
+
+  /// Initialize background services
+  Future<void> _initializeServices() async {
+    // Initialize offline playback service (listens to connection changes)
+    await _offlineService.initialize();
+    // Initialize download manager
+    await _downloadManager.initialize();
+    print('[Main] Offline and Download services initialized');
   }
 
   @override

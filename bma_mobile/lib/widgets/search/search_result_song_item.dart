@@ -168,13 +168,10 @@ class SearchResultSongItem extends StatelessWidget {
       songId: song.id,
       title: song.title,
       artist: song.artist,
+      albumId: song.albumId,
       albumArt: '',
       downloadUrl: downloadUrl,
       totalBytes: 0,
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added to downloads: ${song.title}')),
     );
   }
 

@@ -7,6 +7,7 @@ import 'audio/audio_player_service.dart';
 import 'audio/shuffle_service.dart';
 import 'audio/playback_state_manager.dart';
 import 'api/connection_service.dart';
+import 'offline/offline_playback_service.dart';
 import '../main.dart' show audioHandler;
 
 /// Central playback manager that integrates Phase 6 audio services
@@ -23,6 +24,7 @@ class PlaybackManager extends ChangeNotifier {
   final ShuffleService<Song> _shuffleService = ShuffleService<Song>();
   final ConnectionService _connectionService = ConnectionService();
   final PlaybackStateManager _stateManager = PlaybackStateManager();
+  final OfflinePlaybackService _offlineService = OfflinePlaybackService();
 
   // State
   PlaybackQueue _queue = PlaybackQueue();
@@ -336,23 +338,46 @@ class PlaybackManager extends ChangeNotifier {
     }
 
     print('[PlaybackManager] Current song: ${song.title}');
-    print('[PlaybackManager] Checking connection...');
-
-    if (_connectionService.apiClient == null) {
-      print('[PlaybackManager] ERROR: Not connected to server! apiClient is null');
-      throw Exception('Not connected to server');
-    }
-
-    print('[PlaybackManager] Connected! Base URL: ${_connectionService.apiClient!.baseUrl}');
 
     try {
-      // Build stream URL for the song
-      final streamUrl = '${_connectionService.apiClient!.baseUrl}/stream/${song.filePath}';
+      // Determine playback source (local file or stream)
+      final playbackSource = await _offlineService.getPlaybackSource(song.id);
+      print('[PlaybackManager] Playback source: $playbackSource');
+
+      String audioUrl;
+
+      switch (playbackSource) {
+        case PlaybackSource.local:
+          // Use local downloaded file
+          final localPath = _offlineService.getLocalFilePath(song.id);
+          if (localPath == null) {
+            throw Exception('Local file path not found for downloaded song');
+          }
+          audioUrl = 'file://$localPath';
+          print('[PlaybackManager] Playing from local file: $audioUrl');
+          break;
+
+        case PlaybackSource.stream:
+          // Stream from server
+          print('[PlaybackManager] Checking connection...');
+          if (_connectionService.apiClient == null) {
+            print('[PlaybackManager] ERROR: Not connected to server! apiClient is null');
+            throw Exception('Not connected to server');
+          }
+          print('[PlaybackManager] Connected! Base URL: ${_connectionService.apiClient!.baseUrl}');
+          audioUrl = '${_connectionService.apiClient!.baseUrl}/stream/${song.filePath}';
+          print('[PlaybackManager] Streaming from server: $audioUrl');
+          break;
+
+        case PlaybackSource.unavailable:
+          print('[PlaybackManager] ERROR: Song not available - offline and not downloaded');
+          throw Exception('Song not available offline. Download it first to play offline.');
+      }
 
       // If we have a restored position, load without playing, seek, then play
       if (_restoredPosition != null) {
         // Load the song WITHOUT starting playback
-        await _audioPlayer.loadSong(song, streamUrl);
+        await _audioPlayer.loadSong(song, audioUrl);
 
         // Wait for the audio player to be fully ready before seeking
         await Future.delayed(const Duration(milliseconds: 500));
@@ -369,7 +394,7 @@ class PlaybackManager extends ChangeNotifier {
         _restoredPosition = null; // Clear so it doesn't affect next song
       } else {
         // No restored position - play normally from the beginning
-        await _audioPlayer.playSong(song, streamUrl);
+        await _audioPlayer.playSong(song, audioUrl);
       }
     } catch (e, stackTrace) {
       print('[PlaybackManager] ERROR in _playCurrentSong: $e');

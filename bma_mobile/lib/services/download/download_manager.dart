@@ -90,6 +90,7 @@ class DownloadManager {
     required String songId,
     required String title,
     required String artist,
+    String? albumId,
     required String albumArt,
     required String downloadUrl,
     required int totalBytes,
@@ -113,6 +114,7 @@ class DownloadManager {
       songId: songId,
       title: title,
       artist: artist,
+      albumId: albumId,
       albumArt: albumArt,
       downloadUrl: downloadUrl,
       status: DownloadStatus.pending,
@@ -126,6 +128,7 @@ class DownloadManager {
   /// Download entire album
   Future<void> downloadAlbum({
     required List<Map<String, dynamic>> songs,
+    String? albumId,
   }) async {
     await _ensureInitialized();
 
@@ -142,6 +145,7 @@ class DownloadManager {
         songId: song['id'] as String,
         title: song['title'] as String,
         artist: song['artist'] as String,
+        albumId: albumId ?? song['albumId'] as String?,
         albumArt: song['albumArt'] as String,
         downloadUrl: song['downloadUrl'] as String,
         status: DownloadStatus.pending,

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../../services/offline/offline_playback_service.dart';
 import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_tile.dart';
 
@@ -12,11 +14,35 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   String _version = 'Loading...';
+  final OfflinePlaybackService _offlineService = OfflinePlaybackService();
+  bool _isOfflineModeEnabled = false;
+  StreamSubscription<bool>? _offlineSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadVersion();
+    _initOfflineService();
+  }
+
+  @override
+  void dispose() {
+    _offlineSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initOfflineService() async {
+    await _offlineService.initialize();
+    setState(() {
+      _isOfflineModeEnabled = _offlineService.isOfflineModeEnabled;
+    });
+
+    // Listen for offline state changes
+    _offlineSubscription = _offlineService.offlineStateStream.listen((_) {
+      setState(() {
+        _isOfflineModeEnabled = _offlineService.isOfflineModeEnabled;
+      });
+    });
   }
 
   Future<void> _loadVersion() async {
@@ -58,14 +84,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               SettingsTile(
                 icon: Icons.wifi_off,
                 title: 'Offline Mode',
-                subtitle: 'Enable offline playback',
+                subtitle: _isOfflineModeEnabled
+                    ? 'Only downloaded songs available'
+                    : 'Stream music from server',
                 trailing: Switch(
-                  value: false,
-                  onChanged: (value) {
-                    // TODO: Implement offline mode toggle (Task 8.2)
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Offline mode - Coming soon')),
-                    );
+                  value: _isOfflineModeEnabled,
+                  onChanged: (value) async {
+                    await _offlineService.setOfflineMode(value);
+                    setState(() {
+                      _isOfflineModeEnabled = value;
+                    });
                   },
                 ),
               ),

@@ -8,6 +8,7 @@ class DownloadTask {
   final String songId;
   final String title;
   final String artist;
+  final String? albumId;
   final String albumArt;
   final String downloadUrl;
 
@@ -25,6 +26,7 @@ class DownloadTask {
     required this.songId,
     required this.title,
     required this.artist,
+    this.albumId,
     required this.albumArt,
     required this.downloadUrl,
     this.status = DownloadStatus.pending,
@@ -42,6 +44,7 @@ class DownloadTask {
       'songId': songId,
       'title': title,
       'artist': artist,
+      'albumId': albumId,
       'albumArt': albumArt,
       'downloadUrl': downloadUrl,
       'status': status.toString(),
@@ -60,6 +63,7 @@ class DownloadTask {
       songId: json['songId'] as String,
       title: json['title'] as String,
       artist: json['artist'] as String,
+      albumId: json['albumId'] as String?,
       albumArt: json['albumArt'] as String,
       downloadUrl: json['downloadUrl'] as String,
       status: _parseStatus(json['status'] as String),

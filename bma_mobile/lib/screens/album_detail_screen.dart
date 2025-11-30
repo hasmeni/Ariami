@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import '../models/api_models.dart';
 import '../models/song.dart';
+import '../models/download_task.dart';
 import '../services/api/connection_service.dart';
 import '../services/playback_manager.dart';
 import '../services/playlist_service.dart';
+import '../services/offline/offline_playback_service.dart';
+import '../services/download/download_manager.dart';
 import '../widgets/album/album_header.dart';
 import '../widgets/album/track_list.dart';
 import 'playlist/create_playlist_screen.dart';
@@ -24,15 +27,35 @@ class AlbumDetailScreen extends StatefulWidget {
 class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   final ConnectionService _connectionService = ConnectionService();
   final PlaybackManager _playbackManager = PlaybackManager();
+  final OfflinePlaybackService _offlineService = OfflinePlaybackService();
+  final DownloadManager _downloadManager = DownloadManager();
 
   AlbumDetailResponse? _albumDetail;
   bool _isLoading = true;
   String? _errorMessage;
+  Set<String> _downloadedSongIds = {};
 
   @override
   void initState() {
     super.initState();
     _loadAlbumDetail();
+    _loadDownloadedSongs();
+  }
+
+  /// Load downloaded song IDs
+  void _loadDownloadedSongs() {
+    final queue = _downloadManager.queue;
+    final downloadedIds = <String>{};
+
+    for (final task in queue) {
+      if (task.status == DownloadStatus.completed) {
+        downloadedIds.add(task.songId);
+      }
+    }
+
+    setState(() {
+      _downloadedSongIds = downloadedIds;
+    });
   }
 
   /// Load album detail with songs from server
@@ -119,10 +142,16 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           delegate: SliverChildBuilderDelegate(
             (context, index) {
               final track = _albumDetail!.songs[index];
+              final isDownloaded = _downloadedSongIds.contains(track.id);
+              final isOffline = _offlineService.isOffline;
+              final isAvailable = !isOffline || isDownloaded;
+
               return TrackListItem(
                 track: track,
-                onTap: () => _playTrack(track, index),
+                onTap: isAvailable ? () => _playTrack(track, index) : null,
                 isCurrentTrack: false, // TODO: Connect to playback state
+                isDownloaded: isDownloaded,
+                isAvailable: isAvailable,
               );
             },
             childCount: _albumDetail!.songs.length,
@@ -333,13 +362,31 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
     print('[AlbumDetailScreen] Playing all tracks in album...');
 
-    // Convert all songs
-    final allSongs = _albumDetail!.songs.map((songModel) => Song(
+    // Filter songs for offline mode
+    final isOffline = _offlineService.isOffline;
+    final songsToPlay = isOffline
+        ? _albumDetail!.songs.where((s) => _downloadedSongIds.contains(s.id)).toList()
+        : _albumDetail!.songs;
+
+    if (songsToPlay.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No downloaded songs available'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Convert songs
+    final allSongs = songsToPlay.map((songModel) => Song(
       id: songModel.id,
       title: songModel.title,
       artist: songModel.artist,
       album: widget.album.title,
-      albumId: widget.album.id, // Add albumId for artwork
+      albumId: widget.album.id,
       duration: Duration(seconds: songModel.duration),
       filePath: songModel.id,
       fileSize: 0,
@@ -349,20 +396,12 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
     try {
       await _playbackManager.playSongs(allSongs);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Playing all tracks'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
     } catch (e) {
       print('[AlbumDetailScreen] Error playing all: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Failed: $e'),
+            content: Text('Failed: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -375,13 +414,31 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
     print('[AlbumDetailScreen] Shuffling all tracks in album...');
 
-    // Convert all songs
-    final allSongs = _albumDetail!.songs.map((songModel) => Song(
+    // Filter songs for offline mode
+    final isOffline = _offlineService.isOffline;
+    final songsToPlay = isOffline
+        ? _albumDetail!.songs.where((s) => _downloadedSongIds.contains(s.id)).toList()
+        : _albumDetail!.songs;
+
+    if (songsToPlay.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No downloaded songs available'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Convert songs
+    final allSongs = songsToPlay.map((songModel) => Song(
       id: songModel.id,
       title: songModel.title,
       artist: songModel.artist,
       album: widget.album.title,
-      albumId: widget.album.id, // Add albumId for artwork
+      albumId: widget.album.id,
       duration: Duration(seconds: songModel.duration),
       filePath: songModel.id,
       fileSize: 0,
@@ -391,20 +448,12 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
     try {
       await _playbackManager.playShuffled(allSongs);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Shuffling album'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
     } catch (e) {
       print('[AlbumDetailScreen] Error shuffling: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Failed: $e'),
+            content: Text('Failed: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -464,13 +513,34 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     print('[AlbumDetailScreen] Track index: $index');
     print('==========================================================');
 
-    // Convert all album songs to Song models for queue
-    final allSongs = _albumDetail!.songs.map((songModel) => Song(
+    final isOffline = _offlineService.isOffline;
+
+    // Get songs to add to queue - filter to downloaded only when offline
+    List<SongModel> songsForQueue;
+    int startIndex;
+
+    if (isOffline) {
+      // In offline mode, only add downloaded songs to queue
+      songsForQueue = _albumDetail!.songs
+          .where((s) => _downloadedSongIds.contains(s.id))
+          .toList();
+      // Find the index of the clicked track in the filtered list
+      startIndex = songsForQueue.indexWhere((s) => s.id == track.id);
+      if (startIndex == -1) startIndex = 0;
+      print('[AlbumDetailScreen] Offline mode: ${songsForQueue.length} downloaded songs in queue');
+    } else {
+      // Online mode - add all songs
+      songsForQueue = _albumDetail!.songs;
+      startIndex = index;
+    }
+
+    // Convert to Song models for queue
+    final allSongs = songsForQueue.map((songModel) => Song(
       id: songModel.id,
       title: songModel.title,
       artist: songModel.artist,
       album: widget.album.title,
-      albumId: widget.album.id, // Add albumId for artwork
+      albumId: widget.album.id,
       duration: Duration(seconds: songModel.duration),
       filePath: songModel.id,
       fileSize: 0,
@@ -479,22 +549,12 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     )).toList();
 
     print('[AlbumDetailScreen] Converted ${allSongs.length} songs for queue');
-    print('[AlbumDetailScreen] Calling PlaybackManager.playSongs() starting at index $index...');
+    print('[AlbumDetailScreen] Calling PlaybackManager.playSongs() starting at index $startIndex...');
 
     try {
-      // Play all songs starting from clicked track
-      await _playbackManager.playSongs(allSongs, startIndex: index);
+      // Play songs starting from clicked track
+      await _playbackManager.playSongs(allSongs, startIndex: startIndex);
       print('[AlbumDetailScreen] ✅ Playback started successfully!');
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Playing "${track.title}"'),
-            duration: const Duration(seconds: 1),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
     } catch (e, stackTrace) {
       print('[AlbumDetailScreen] ❌ ERROR: $e');
       print('[AlbumDetailScreen] Stack trace: $stackTrace');
@@ -502,7 +562,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Failed to play: $e'),
+            content: Text('Failed to play: $e'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),

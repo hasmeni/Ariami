@@ -10,52 +10,92 @@ import '../../services/download/download_manager.dart';
 /// Shows album artwork, title, duration, and overflow menu
 class TrackListItem extends StatelessWidget {
   final SongModel track;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool isCurrentTrack;
+  final bool isDownloaded;
+  final bool isAvailable;
 
   const TrackListItem({
     super.key,
     required this.track,
-    required this.onTap,
+    this.onTap,
     this.isCurrentTrack = false,
+    this.isDownloaded = false,
+    this.isAvailable = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      tileColor: isCurrentTrack
-          ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
-          : null,
-      leading: _buildAlbumArt(context),
-      title: Text(
-        track.title,
-        style: TextStyle(
-          fontWeight: isCurrentTrack ? FontWeight.w600 : FontWeight.normal,
-          color: isCurrentTrack ? Theme.of(context).primaryColor : null,
+    final opacity = isAvailable ? 1.0 : 0.4;
+
+    return Opacity(
+      opacity: opacity,
+      child: ListTile(
+        onTap: isAvailable ? onTap : null,
+        tileColor: isCurrentTrack
+            ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
+            : null,
+        leading: _buildLeading(context),
+        title: Text(
+          track.title,
+          style: TextStyle(
+            fontWeight: isCurrentTrack ? FontWeight.w600 : FontWeight.normal,
+            color: isCurrentTrack
+                ? Theme.of(context).primaryColor
+                : (isAvailable ? null : Colors.grey),
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+        subtitle: Text(
+          track.artist,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: Colors.grey[600]),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _formatDuration(track.duration),
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+            if (isAvailable)
+              _buildOverflowMenu(context)
+            else
+              const SizedBox(width: 48), // Placeholder for disabled menu
+          ],
+        ),
       ),
-      subtitle: Text(
-        track.artist,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: Colors.grey[600]),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            _formatDuration(track.duration),
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
+    );
+  }
+
+  /// Build leading widget with download indicator
+  Widget _buildLeading(BuildContext context) {
+    return Stack(
+      children: [
+        _buildAlbumArt(context),
+        if (isDownloaded)
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: Colors.green[600],
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.download_done,
+                size: 10,
+                color: Colors.white,
+              ),
             ),
           ),
-          _buildOverflowMenu(context),
-        ],
-      ),
+      ],
     );
   }
 
@@ -211,13 +251,10 @@ class TrackListItem extends StatelessWidget {
       songId: track.id,
       title: track.title,
       artist: track.artist,
+      albumId: track.albumId,
       albumArt: '',
       downloadUrl: downloadUrl,
       totalBytes: 0, // Will be determined during download
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added to downloads: ${track.title}')),
     );
   }
 

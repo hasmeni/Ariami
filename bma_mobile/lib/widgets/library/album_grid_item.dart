@@ -5,20 +5,30 @@ import '../../models/api_models.dart';
 /// Displays album artwork, title, and artist in a card format
 class AlbumGridItem extends StatelessWidget {
   final AlbumModel album;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool isAvailable;
+  final bool hasDownloadedSongs;
 
   const AlbumGridItem({
     super.key,
     required this.album,
-    required this.onTap,
+    this.onTap,
+    this.isAvailable = true,
+    this.hasDownloadedSongs = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: Column(
+    final opacity = isAvailable ? 1.0 : 0.4;
+
+    return Opacity(
+      opacity: opacity,
+      child: InkWell(
+        onTap: isAvailable ? onTap : null,
+        borderRadius: BorderRadius.circular(4),
+        child: Stack(
+          children: [
+            Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Album artwork with fixed square aspect ratio
@@ -72,6 +82,27 @@ class AlbumGridItem extends StatelessWidget {
             ),
           ),
         ],
+      ),
+      // Download indicator badge
+      if (hasDownloadedSongs)
+        Positioned(
+          top: 4,
+          right: 4,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.green[600],
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.download_done,
+              size: 12,
+              color: Colors.white,
+            ),
+          ),
+        ),
+          ],
+        ),
       ),
     );
   }
