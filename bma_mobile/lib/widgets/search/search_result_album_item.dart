@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/api_models.dart';
-import '../../services/api/connection_service.dart';
+import '../common/cached_artwork.dart';
 
 /// Search result item for albums
 class SearchResultAlbumItem extends StatelessWidget {
@@ -17,26 +17,17 @@ class SearchResultAlbumItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final connectionService = ConnectionService();
-    final artworkUrl = album.coverArt != null && connectionService.apiClient != null
-        ? '${connectionService.apiClient!.baseUrl}/artwork/${album.coverArt}'
-        : null;
-
     return ListTile(
       leading: SizedBox(
         width: 56,
         height: 56,
-        child: ClipRRect(
+        child: CachedArtwork(
+          albumId: album.id,
+          artworkUrl: album.coverArt,
+          width: 56,
+          height: 56,
           borderRadius: BorderRadius.circular(4),
-          child: artworkUrl != null
-              ? Image.network(
-                  artworkUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return _buildPlaceholder(context);
-                  },
-                )
-              : _buildPlaceholder(context),
+          fallbackIconSize: 32,
         ),
       ),
       title: Text(
@@ -59,18 +50,6 @@ class SearchResultAlbumItem extends StatelessWidget {
       ),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
-    );
-  }
-
-  /// Build placeholder for missing album art
-  Widget _buildPlaceholder(BuildContext context) {
-    return Container(
-      color: Theme.of(context).primaryColor.withOpacity(0.1),
-      child: Icon(
-        Icons.album,
-        size: 32,
-        color: Theme.of(context).primaryColor.withOpacity(0.3),
-      ),
     );
   }
 }

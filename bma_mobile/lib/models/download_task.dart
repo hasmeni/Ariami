@@ -9,8 +9,11 @@ class DownloadTask {
   final String title;
   final String artist;
   final String? albumId;
+  final String? albumName;
   final String albumArt;
   final String downloadUrl;
+  final int duration; // Duration in seconds
+  final int? trackNumber;
 
   DownloadStatus status;
   double progress; // 0.0 to 1.0
@@ -27,8 +30,11 @@ class DownloadTask {
     required this.title,
     required this.artist,
     this.albumId,
+    this.albumName,
     required this.albumArt,
     required this.downloadUrl,
+    this.duration = 0,
+    this.trackNumber,
     this.status = DownloadStatus.pending,
     this.progress = 0.0,
     this.bytesDownloaded = 0,
@@ -45,8 +51,11 @@ class DownloadTask {
       'title': title,
       'artist': artist,
       'albumId': albumId,
+      'albumName': albumName,
       'albumArt': albumArt,
       'downloadUrl': downloadUrl,
+      'duration': duration,
+      'trackNumber': trackNumber,
       'status': status.toString(),
       'progress': progress,
       'bytesDownloaded': bytesDownloaded,
@@ -64,8 +73,11 @@ class DownloadTask {
       title: json['title'] as String,
       artist: json['artist'] as String,
       albumId: json['albumId'] as String?,
+      albumName: json['albumName'] as String?,
       albumArt: json['albumArt'] as String,
       downloadUrl: json['downloadUrl'] as String,
+      duration: json['duration'] as int? ?? 0,
+      trackNumber: json['trackNumber'] as int?,
       status: _parseStatus(json['status'] as String),
       progress: (json['progress'] as num).toDouble(),
       bytesDownloaded: json['bytesDownloaded'] as int,

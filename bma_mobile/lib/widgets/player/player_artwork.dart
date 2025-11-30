@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/song.dart';
 import '../../services/api/connection_service.dart';
+import '../common/cached_artwork.dart';
 
 /// Large album artwork with swipe gestures for track skipping
 class PlayerArtwork extends StatelessWidget {
@@ -56,26 +57,25 @@ class PlayerArtwork extends StatelessWidget {
     );
   }
 
-  /// Build artwork image or placeholder
+  /// Build artwork image or placeholder using CachedArtwork
   Widget _buildArtwork(BuildContext context) {
     final connectionService = ConnectionService();
 
     // Try to load album artwork if song has albumId
-    if (song.albumId != null && connectionService.apiClient != null) {
-      final albumArtworkUrl = '${connectionService.apiClient!.baseUrl}/artwork/${song.albumId}';
+    if (song.albumId != null) {
+      final albumArtworkUrl = connectionService.apiClient != null
+          ? '${connectionService.apiClient!.baseUrl}/artwork/${song.albumId}'
+          : null;
 
-      return Image.network(
-        albumArtworkUrl,
+      return CachedArtwork(
+        albumId: song.albumId!,
+        artworkUrl: albumArtworkUrl,
         fit: BoxFit.contain,
         width: 350,
         height: 350,
-        errorBuilder: (context, error, stackTrace) {
-          return _buildPlaceholder(context);
-        },
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return _buildPlaceholder(context);
-        },
+        fallback: _buildPlaceholder(context),
+        fallbackIcon: Icons.music_note,
+        fallbackIconSize: 120,
       );
     }
 
@@ -85,6 +85,8 @@ class PlayerArtwork extends StatelessWidget {
   /// Build placeholder artwork
   Widget _buildPlaceholder(BuildContext context) {
     return Container(
+      width: 350,
+      height: 350,
       color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
       child: Center(
         child: Icon(

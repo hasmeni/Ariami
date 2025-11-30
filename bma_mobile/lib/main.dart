@@ -13,6 +13,7 @@ import 'services/api/connection_service.dart';
 import 'services/audio/audio_handler.dart';
 import 'services/offline/offline_playback_service.dart';
 import 'services/download/download_manager.dart';
+import 'services/cache/cache_manager.dart';
 
 // Global audio handler instance - accessible throughout the app
 // Nullable because initialization might fail on some devices
@@ -87,6 +88,7 @@ class _MyAppState extends State<MyApp> {
   final ConnectionService _connectionService = ConnectionService();
   final OfflinePlaybackService _offlineService = OfflinePlaybackService();
   final DownloadManager _downloadManager = DownloadManager();
+  final CacheManager _cacheManager = CacheManager();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _isLoading = true;
   Widget? _initialScreen;
@@ -106,7 +108,9 @@ class _MyAppState extends State<MyApp> {
     await _offlineService.initialize();
     // Initialize download manager
     await _downloadManager.initialize();
-    print('[Main] Offline and Download services initialized');
+    // Initialize cache manager for artwork and song caching
+    await _cacheManager.initialize();
+    print('[Main] Offline, Download, and Cache services initialized');
   }
 
   @override
@@ -115,23 +119,32 @@ class _MyAppState extends State<MyApp> {
     super.dispose();
   }
 
-  /// Listen for connection state changes to navigate to reconnect screen
+  /// Listen for connection state changes
   void _listenToConnectionChanges() {
     _connectionSubscription = _connectionService.connectionStateStream.listen(
       (isConnected) {
         if (!isConnected && _connectionService.hasServerInfo) {
-          // Connection lost but we have server info - navigate to reconnect screen
-          print('Connection lost - navigating to reconnect screen');
-          _navigatorKey.currentState?.pushNamedAndRemoveUntil(
-            '/reconnect',
-            (route) => false,
-          );
+          // Connection lost - check if offline mode is enabled
+          if (_offlineService.isOfflineModeEnabled) {
+            // Offline mode enabled - stay in the app, don't navigate to reconnect
+            print('Connection lost but offline mode enabled - staying in app');
+          } else {
+            // Offline mode not enabled - navigate to reconnect screen
+            print('Connection lost - navigating to reconnect screen');
+            _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+              '/reconnect',
+              (route) => false,
+            );
+          }
         }
       },
     );
   }
 
   Future<void> _determineInitialScreen() async {
+    // Ensure offline service is initialized before checking its state
+    await _offlineService.initialize();
+    
     // Try to restore previous connection
     final restored = await _connectionService.tryRestoreConnection();
 
@@ -146,8 +159,10 @@ class _MyAppState extends State<MyApp> {
         // Connection restored successfully - go to main app
         _initialScreen = const MainNavigationScreen();
       } else if (_connectionService.serverInfo != null) {
-        // Has saved server info but couldn't connect - go to reconnect screen
-        _initialScreen = const ReconnectScreen();
+        // Has saved server info but couldn't connect
+        // Auto-enable offline mode and go to main app with offline content
+        _offlineService.setOfflineMode(true);
+        _initialScreen = const MainNavigationScreen();
       } else {
         // No saved connection - go to welcome/setup flow
         _initialScreen = const WelcomeScreen();

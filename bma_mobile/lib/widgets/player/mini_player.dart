@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/song.dart';
 import '../../services/api/connection_service.dart';
+import '../common/cached_artwork.dart';
 
 /// Mini player widget that appears at the bottom during playback
 class MiniPlayer extends StatelessWidget {
@@ -153,26 +154,24 @@ class MiniPlayer extends StatelessWidget {
     );
   }
 
-  /// Build album artwork widget
+  /// Build album artwork widget using CachedArtwork
   Widget _buildAlbumArt(BuildContext context) {
     final connectionService = ConnectionService();
 
-    if (currentSong?.albumId != null && connectionService.apiClient != null) {
-      final artworkUrl = '${connectionService.apiClient!.baseUrl}/artwork/${currentSong!.albumId}';
+    if (currentSong?.albumId != null) {
+      final artworkUrl = connectionService.apiClient != null
+          ? '${connectionService.apiClient!.baseUrl}/artwork/${currentSong!.albumId}'
+          : null;
 
-      return ClipRRect(
+      return CachedArtwork(
+        albumId: currentSong!.albumId!,
+        artworkUrl: artworkUrl,
+        width: 45,
+        height: 45,
         borderRadius: BorderRadius.circular(4),
-        child: Image.network(
-          artworkUrl,
-          width: 45,
-          height: 45,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => _buildPlaceholder(context),
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return _buildPlaceholder(context);
-          },
-        ),
+        fallback: _buildPlaceholder(context),
+        fallbackIcon: Icons.music_note,
+        fallbackIconSize: 24,
       );
     }
 

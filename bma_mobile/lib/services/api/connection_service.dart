@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/api_models.dart';
 import '../../models/server_info.dart';
 import '../../models/websocket_models.dart';
+import '../offline/offline_playback_service.dart';
 import 'api_client.dart';
 import 'websocket_service.dart';
 
@@ -261,9 +262,9 @@ class ConnectionService {
   }
 
   /// Called when WebSocket disconnects
-  /// This immediately notifies the UI to show the reconnect screen
-  void _handleWebSocketDisconnect() {
-    print('WebSocket disconnect detected - marking connection as lost');
+  /// This automatically enables offline mode so user can continue using the app
+  void _handleWebSocketDisconnect() async {
+    print('WebSocket disconnect detected - enabling offline mode');
 
     // Only handle if we thought we were connected
     if (_isConnected) {
@@ -272,7 +273,10 @@ class ConnectionService {
       _apiClient = null;
       _sessionId = null;
 
-      // Broadcast disconnected state immediately so UI can react
+      // Auto-enable offline mode so user stays in the app
+      await OfflinePlaybackService().setOfflineMode(true);
+
+      // Broadcast disconnected state
       _connectionStateController.add(false);
     }
   }
@@ -311,26 +315,19 @@ class ConnectionService {
     }
   }
 
-  /// Handle connection loss and attempt reconnection
+  /// Handle connection loss - auto-enable offline mode
   Future<void> _handleConnectionLoss() async {
-    print('Connection lost - attempting to reconnect...');
+    print('Connection lost - enabling offline mode');
     _isConnected = false;
     _stopHeartbeat();
+    _apiClient = null;
+    _sessionId = null;
 
-    // Wait before retry
-    await Future.delayed(const Duration(seconds: 5));
+    // Auto-enable offline mode so user stays in the app
+    await OfflinePlaybackService().setOfflineMode(true);
 
-    // Try to restore connection
-    final restored = await tryRestoreConnection();
-    if (!restored) {
-      print('Reconnection failed - keeping server info for manual retry');
-      // DON'T clear server info! User should be able to retry without re-scanning QR
-      // Only clear runtime state
-      _apiClient = null;
-      _sessionId = null;
-      // Broadcast disconnected state so UI can navigate to reconnect screen
-      _connectionStateController.add(false);
-    }
+    // Broadcast disconnected state
+    _connectionStateController.add(false);
   }
 
   // ============================================================================

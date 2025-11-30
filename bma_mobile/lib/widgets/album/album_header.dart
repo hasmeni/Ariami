@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import '../common/cached_artwork.dart';
 
 /// Album artwork header with parallax effect
 /// Used in album detail screen's SliverAppBar
 class AlbumArtworkHeader extends StatelessWidget {
   final String? coverArt;
   final String albumTitle;
+  final String? albumId;
 
   const AlbumArtworkHeader({
     super.key,
     this.coverArt,
     required this.albumTitle,
+    this.albumId,
   });
 
   @override
@@ -41,31 +44,30 @@ class AlbumArtworkHeader extends StatelessWidget {
 
   /// Build album artwork with fallback
   Widget _buildArtwork() {
-    print('[AlbumArtworkHeader] coverArt URL: $coverArt');
-    print('[AlbumArtworkHeader] coverArt is null: ${coverArt == null}');
-    print('[AlbumArtworkHeader] coverArt is empty: ${coverArt?.isEmpty}');
+    // If we have an albumId, use CachedArtwork for automatic caching
+    if (albumId != null && coverArt != null && coverArt!.isNotEmpty) {
+      return CachedArtwork(
+        albumId: albumId!,
+        artworkUrl: coverArt,
+        fit: BoxFit.cover,
+        fallback: _buildFallbackArt(),
+      );
+    }
 
+    // Fallback for when no albumId is available
     if (coverArt != null && coverArt!.isNotEmpty) {
-      print('[AlbumArtworkHeader] Loading image from: $coverArt');
       return Image.network(
         coverArt!,
         fit: BoxFit.cover,
         loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) {
-            print('[AlbumArtworkHeader] Image loaded successfully!');
-            return child;
-          }
-          print('[AlbumArtworkHeader] Loading... ${loadingProgress.cumulativeBytesLoaded}/${loadingProgress.expectedTotalBytes}');
+          if (loadingProgress == null) return child;
           return const Center(child: CircularProgressIndicator());
         },
         errorBuilder: (context, error, stackTrace) {
-          print('[AlbumArtworkHeader] ERROR loading image: $error');
-          print('[AlbumArtworkHeader] Stack trace: $stackTrace');
           return _buildFallbackArt();
         },
       );
     } else {
-      print('[AlbumArtworkHeader] Using fallback art (no URL provided)');
       return _buildFallbackArt();
     }
   }

@@ -5,6 +5,7 @@ import '../../screens/playlist/add_to_playlist_screen.dart';
 import '../../services/api/connection_service.dart';
 import '../../services/playback_manager.dart';
 import '../../services/download/download_manager.dart';
+import '../common/cached_artwork.dart';
 
 /// Track list item for album detail view
 /// Shows album artwork, title, duration, and overflow menu
@@ -13,7 +14,9 @@ class TrackListItem extends StatelessWidget {
   final VoidCallback? onTap;
   final bool isCurrentTrack;
   final bool isDownloaded;
+  final bool isCached;
   final bool isAvailable;
+  final String? albumName;
 
   const TrackListItem({
     super.key,
@@ -21,7 +24,9 @@ class TrackListItem extends StatelessWidget {
     this.onTap,
     this.isCurrentTrack = false,
     this.isDownloaded = false,
+    this.isCached = false,
     this.isAvailable = true,
+    this.albumName,
   });
 
   @override
@@ -73,7 +78,7 @@ class TrackListItem extends StatelessWidget {
     );
   }
 
-  /// Build leading widget with download indicator
+  /// Build leading widget with download/cache indicator
   Widget _buildLeading(BuildContext context) {
     return Stack(
       children: [
@@ -94,34 +99,46 @@ class TrackListItem extends StatelessWidget {
                 color: Colors.white,
               ),
             ),
+          )
+        else if (isCached)
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: Colors.blue[400],
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.cloud_done,
+                size: 10,
+                color: Colors.white,
+              ),
+            ),
           ),
       ],
     );
   }
 
-  /// Build album artwork or placeholder
+  /// Build album artwork or placeholder using CachedArtwork
   Widget _buildAlbumArt(BuildContext context) {
     final connectionService = ConnectionService();
 
-    if (track.albumId != null && connectionService.apiClient != null) {
-      final artworkUrl =
-          '${connectionService.apiClient!.baseUrl}/artwork/${track.albumId}';
+    if (track.albumId != null) {
+      final artworkUrl = connectionService.apiClient != null
+          ? '${connectionService.apiClient!.baseUrl}/artwork/${track.albumId}'
+          : null;
 
-      return ClipRRect(
+      return CachedArtwork(
+        albumId: track.albumId!,
+        artworkUrl: artworkUrl,
+        width: 48,
+        height: 48,
         borderRadius: BorderRadius.circular(4),
-        child: SizedBox(
-          width: 48,
-          height: 48,
-          child: Image.network(
-            artworkUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return _buildPlaceholder();
-            },
-          ),
-        ),
+        fallback: _buildPlaceholder(),
+        fallbackIcon: Icons.music_note,
+        fallbackIconSize: 24,
       );
     }
 
@@ -252,8 +269,11 @@ class TrackListItem extends StatelessWidget {
       title: track.title,
       artist: track.artist,
       albumId: track.albumId,
+      albumName: albumName,
       albumArt: '',
       downloadUrl: downloadUrl,
+      duration: track.duration,
+      trackNumber: track.trackNumber,
       totalBytes: 0, // Will be determined during download
     );
   }

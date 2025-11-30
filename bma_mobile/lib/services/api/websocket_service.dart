@@ -3,9 +3,13 @@ import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../../models/websocket_models.dart';
 import '../../models/server_info.dart';
+import '../offline/offline_playback_service.dart';
 
 /// WebSocket service for real-time updates
 class WebSocketService {
+  // Use lazy getter to avoid circular dependency during construction
+  OfflinePlaybackService get _offlineService => OfflinePlaybackService();
+  
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   ServerInfo? _serverInfo;
@@ -113,7 +117,11 @@ class WebSocketService {
   void _handleError(dynamic error) {
     print('WebSocket error: $error');
     _isConnected = false;
-    _scheduleReconnect();
+    
+    // Only schedule reconnect if not in offline mode
+    if (!_offlineService.isOfflineModeEnabled) {
+      _scheduleReconnect();
+    }
   }
 
   /// Handle WebSocket disconnect
@@ -121,12 +129,13 @@ class WebSocketService {
     print('WebSocket disconnected');
     _isConnected = false;
 
-    // Notify ConnectionService immediately
+    // Notify ConnectionService immediately (which will enable offline mode)
     if (onDisconnected != null) {
       onDisconnected!();
     }
 
-    _scheduleReconnect();
+    // Don't schedule reconnect here - ConnectionService enables offline mode
+    // Reconnection will only happen when user explicitly disables offline mode
   }
 
   // ============================================================================
@@ -180,6 +189,12 @@ class WebSocketService {
   /// Schedule reconnection attempt
   void _scheduleReconnect() {
     if (_serverInfo == null) return;
+    
+    // Don't reconnect if offline mode is enabled
+    if (_offlineService.isOfflineModeEnabled) {
+      print('Offline mode enabled - skipping WebSocket reconnect');
+      return;
+    }
 
     _stopReconnectTimer();
 
@@ -194,6 +209,12 @@ class WebSocketService {
   /// Attempt to reconnect
   Future<void> _attemptReconnect() async {
     if (_serverInfo == null) return;
+    
+    // Check again in case offline mode was enabled while waiting
+    if (_offlineService.isOfflineModeEnabled) {
+      print('Offline mode enabled - aborting WebSocket reconnect');
+      return;
+    }
 
     print('Attempting WebSocket reconnect...');
 

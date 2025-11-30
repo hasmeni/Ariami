@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/api_models.dart';
+import '../common/cached_artwork.dart';
 
 /// Album grid item widget
 /// Displays album artwork, title, and artist in a card format
@@ -107,56 +108,15 @@ class AlbumGridItem extends StatelessWidget {
     );
   }
 
-  /// Build album artwork with loading and fallback
+  /// Build album artwork with loading and fallback (using CachedArtwork)
   Widget _buildAlbumArt(BuildContext context) {
-    if (album.coverArt != null && album.coverArt!.isNotEmpty) {
-      return Image.network(
-        album.coverArt!,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (wasSynchronouslyLoaded) {
-            return child;
-          }
-          // Fade-in animation for artwork
-          return AnimatedOpacity(
-            opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeIn,
-            child: child,
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          return _buildFallbackArt();
-        },
-      );
-    } else {
-      return _buildFallbackArt();
-    }
-  }
-
-  /// Fallback artwork when no cover art is available
-  Widget _buildFallbackArt() {
-    // Generate a color based on album title for variety
-    final colorIndex = album.title.hashCode % 5;
-    final colors = [
-      Colors.blue[300]!,
-      Colors.purple[300]!,
-      Colors.green[300]!,
-      Colors.orange[300]!,
-      Colors.pink[300]!,
-    ];
-
-    return Container(
+    return CachedArtwork(
+      albumId: album.id,
+      artworkUrl: album.coverArt,
+      fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
-      color: colors[colorIndex],
-      child: const Icon(
-        Icons.album,
-        size: 48,
-        color: Colors.white,
-      ),
+      fallbackIconSize: 48,
     );
   }
 }

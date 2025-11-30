@@ -8,6 +8,7 @@ import 'audio/shuffle_service.dart';
 import 'audio/playback_state_manager.dart';
 import 'api/connection_service.dart';
 import 'offline/offline_playback_service.dart';
+import 'cache/cache_manager.dart';
 import '../main.dart' show audioHandler;
 
 /// Central playback manager that integrates Phase 6 audio services
@@ -25,6 +26,7 @@ class PlaybackManager extends ChangeNotifier {
   final ConnectionService _connectionService = ConnectionService();
   final PlaybackStateManager _stateManager = PlaybackStateManager();
   final OfflinePlaybackService _offlineService = OfflinePlaybackService();
+  final CacheManager _cacheManager = CacheManager();
 
   // State
   PlaybackQueue _queue = PlaybackQueue();
@@ -348,13 +350,23 @@ class PlaybackManager extends ChangeNotifier {
 
       switch (playbackSource) {
         case PlaybackSource.local:
-          // Use local downloaded file
+          // Use local downloaded file (protected)
           final localPath = _offlineService.getLocalFilePath(song.id);
           if (localPath == null) {
             throw Exception('Local file path not found for downloaded song');
           }
           audioUrl = 'file://$localPath';
-          print('[PlaybackManager] Playing from local file: $audioUrl');
+          print('[PlaybackManager] Playing from downloaded file: $audioUrl');
+          break;
+
+        case PlaybackSource.cached:
+          // Use cached file (auto-cached from previous playback)
+          final cachedPath = await _offlineService.getCachedFilePath(song.id);
+          if (cachedPath == null) {
+            throw Exception('Cached file path not found');
+          }
+          audioUrl = 'file://$cachedPath';
+          print('[PlaybackManager] Playing from cached file: $audioUrl');
           break;
 
         case PlaybackSource.stream:
@@ -367,11 +379,14 @@ class PlaybackManager extends ChangeNotifier {
           print('[PlaybackManager] Connected! Base URL: ${_connectionService.apiClient!.baseUrl}');
           audioUrl = '${_connectionService.apiClient!.baseUrl}/stream/${song.filePath}';
           print('[PlaybackManager] Streaming from server: $audioUrl');
+
+          // Trigger background caching of the song for offline use
+          _cacheSongInBackground(song);
           break;
 
         case PlaybackSource.unavailable:
-          print('[PlaybackManager] ERROR: Song not available - offline and not downloaded');
-          throw Exception('Song not available offline. Download it first to play offline.');
+          print('[PlaybackManager] ERROR: Song not available - offline and not downloaded/cached');
+          throw Exception('Song not available offline. Download or play it while online first.');
       }
 
       // If we have a restored position, load without playing, seek, then play
@@ -401,6 +416,23 @@ class PlaybackManager extends ChangeNotifier {
       print('[PlaybackManager] Stack trace: $stackTrace');
       rethrow;
     }
+  }
+
+  /// Internal: Cache a song in the background for future offline playback
+  void _cacheSongInBackground(Song song) {
+    if (_connectionService.apiClient == null) return;
+
+    // Construct the download URL for caching
+    final downloadUrl = '${_connectionService.apiClient!.baseUrl}/download/${song.id}';
+
+    // Trigger background cache (non-blocking)
+    _cacheManager.cacheSong(song.id, downloadUrl).then((started) {
+      if (started) {
+        print('[PlaybackManager] Started background caching for: ${song.title}');
+      }
+    }).catchError((e) {
+      print('[PlaybackManager] Failed to start background cache: $e');
+    });
   }
 
   /// Internal: Handle song completion

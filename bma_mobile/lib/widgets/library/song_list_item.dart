@@ -13,6 +13,7 @@ class SongListItem extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final bool isDownloaded;
+  final bool isCached;
   final bool isAvailable;
 
   const SongListItem({
@@ -21,6 +22,7 @@ class SongListItem extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.isDownloaded = false,
+    this.isCached = false,
     this.isAvailable = true,
   });
 
@@ -38,12 +40,21 @@ class SongListItem extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
           child: Row(
             children: [
-              // Download indicator
+              // Offline availability indicator
               if (isDownloaded) ...[
+                // Downloaded (protected) - green checkmark
                 Icon(
                   Icons.download_done,
                   size: 16,
                   color: Colors.green[600],
+                ),
+                const SizedBox(width: 8),
+              ] else if (isCached) ...[
+                // Cached (may be evicted) - blue/grey cloud
+                Icon(
+                  Icons.cloud_done,
+                  size: 16,
+                  color: Colors.blue[400],
                 ),
                 const SizedBox(width: 8),
               ],
@@ -238,6 +249,8 @@ class SongListItem extends StatelessWidget {
       albumId: song.albumId,
       albumArt: '',
       downloadUrl: downloadUrl,
+      duration: song.duration,
+      trackNumber: song.trackNumber,
       totalBytes: 0, // Will be determined during download
     );
   }

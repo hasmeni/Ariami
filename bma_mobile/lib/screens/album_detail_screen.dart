@@ -7,6 +7,7 @@ import '../services/playback_manager.dart';
 import '../services/playlist_service.dart';
 import '../services/offline/offline_playback_service.dart';
 import '../services/download/download_manager.dart';
+import '../services/cache/cache_manager.dart';
 import '../widgets/album/album_header.dart';
 import '../widgets/album/track_list.dart';
 import 'playlist/create_playlist_screen.dart';
@@ -29,17 +30,20 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   final PlaybackManager _playbackManager = PlaybackManager();
   final OfflinePlaybackService _offlineService = OfflinePlaybackService();
   final DownloadManager _downloadManager = DownloadManager();
+  final CacheManager _cacheManager = CacheManager();
 
   AlbumDetailResponse? _albumDetail;
   bool _isLoading = true;
   String? _errorMessage;
   Set<String> _downloadedSongIds = {};
+  Set<String> _cachedSongIds = {};
 
   @override
   void initState() {
     super.initState();
     _loadAlbumDetail();
     _loadDownloadedSongs();
+    _loadCachedSongs();
   }
 
   /// Load downloaded song IDs
@@ -58,8 +62,34 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     });
   }
 
-  /// Load album detail with songs from server
+  /// Load cached song IDs for this album
+  Future<void> _loadCachedSongs() async {
+    if (_albumDetail == null) return;
+
+    final cachedIds = <String>{};
+    for (final song in _albumDetail!.songs) {
+      final isCached = await _cacheManager.isSongCached(song.id);
+      if (isCached) {
+        cachedIds.add(song.id);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _cachedSongIds = cachedIds;
+      });
+    }
+  }
+
+  /// Load album detail with songs from server (or from downloads if offline)
   Future<void> _loadAlbumDetail() async {
+    // If offline mode is enabled, build from downloads
+    if (_offlineService.isOfflineModeEnabled) {
+      print('[AlbumDetailScreen] Offline mode - building from downloads');
+      _buildAlbumDetailFromDownloads();
+      return;
+    }
+    
     if (_connectionService.apiClient == null) {
       setState(() {
         _isLoading = false;
@@ -89,6 +119,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         _albumDetail = detail;
         _isLoading = false;
       });
+
+      // Load cached songs after album detail loads
+      await _loadCachedSongs();
     } catch (e) {
       print('[AlbumDetailScreen] ERROR loading album detail: $e');
       setState(() {
@@ -96,6 +129,41 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         _errorMessage = 'Failed to load album: $e';
       });
     }
+  }
+
+  /// Build album detail from downloaded songs when offline
+  void _buildAlbumDetailFromDownloads() {
+    final queue = _downloadManager.queue;
+    final albumSongs = queue
+        .where((t) => 
+            t.status == DownloadStatus.completed && 
+            t.albumId == widget.album.id)
+        .map((t) => SongModel(
+            id: t.songId,
+            title: t.title,
+            artist: t.artist,
+            albumId: t.albumId,
+            duration: t.duration,
+            trackNumber: t.trackNumber,
+          ))
+        .toList();
+
+    // Sort by track number
+    albumSongs.sort((a, b) => (a.trackNumber ?? 999).compareTo(b.trackNumber ?? 999));
+
+    print('[AlbumDetailScreen] Built ${albumSongs.length} songs from downloads');
+
+    setState(() {
+      _albumDetail = AlbumDetailResponse(
+        id: widget.album.id,
+        title: widget.album.title,
+        artist: widget.album.artist,
+        songs: albumSongs,
+        coverArt: null, // No cover art available offline
+        year: null,
+      );
+      _isLoading = false;
+    });
   }
 
   @override
@@ -124,6 +192,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           flexibleSpace: AlbumArtworkHeader(
             coverArt: _albumDetail?.coverArt ?? widget.album.coverArt,
             albumTitle: widget.album.title,
+            albumId: widget.album.id,
           ),
         ),
 
@@ -143,15 +212,18 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             (context, index) {
               final track = _albumDetail!.songs[index];
               final isDownloaded = _downloadedSongIds.contains(track.id);
+              final isCached = _cachedSongIds.contains(track.id);
               final isOffline = _offlineService.isOffline;
-              final isAvailable = !isOffline || isDownloaded;
+              final isAvailable = !isOffline || isDownloaded || isCached;
 
               return TrackListItem(
                 track: track,
                 onTap: isAvailable ? () => _playTrack(track, index) : null,
                 isCurrentTrack: false, // TODO: Connect to playback state
                 isDownloaded: isDownloaded,
+                isCached: isCached,
                 isAvailable: isAvailable,
+                albumName: widget.album.title,
               );
             },
             childCount: _albumDetail!.songs.length,
@@ -362,17 +434,18 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
     print('[AlbumDetailScreen] Playing all tracks in album...');
 
-    // Filter songs for offline mode
+    // Filter songs for offline mode (include both downloaded and cached)
     final isOffline = _offlineService.isOffline;
     final songsToPlay = isOffline
-        ? _albumDetail!.songs.where((s) => _downloadedSongIds.contains(s.id)).toList()
+        ? _albumDetail!.songs.where((s) => 
+            _downloadedSongIds.contains(s.id) || _cachedSongIds.contains(s.id)).toList()
         : _albumDetail!.songs;
 
     if (songsToPlay.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No downloaded songs available'),
+            content: Text('No offline songs available'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -414,17 +487,18 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
     print('[AlbumDetailScreen] Shuffling all tracks in album...');
 
-    // Filter songs for offline mode
+    // Filter songs for offline mode (include both downloaded and cached)
     final isOffline = _offlineService.isOffline;
     final songsToPlay = isOffline
-        ? _albumDetail!.songs.where((s) => _downloadedSongIds.contains(s.id)).toList()
+        ? _albumDetail!.songs.where((s) => 
+            _downloadedSongIds.contains(s.id) || _cachedSongIds.contains(s.id)).toList()
         : _albumDetail!.songs;
 
     if (songsToPlay.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No downloaded songs available'),
+            content: Text('No offline songs available'),
             backgroundColor: Colors.orange,
           ),
         );

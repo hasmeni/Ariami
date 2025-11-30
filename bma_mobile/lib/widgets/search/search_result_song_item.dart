@@ -5,6 +5,7 @@ import '../../screens/playlist/add_to_playlist_screen.dart';
 import '../../services/api/connection_service.dart';
 import '../../services/playback_manager.dart';
 import '../../services/download/download_manager.dart';
+import '../common/cached_artwork.dart';
 
 /// Search result item for songs
 class SearchResultSongItem extends StatelessWidget {
@@ -171,35 +172,31 @@ class SearchResultSongItem extends StatelessWidget {
       albumId: song.albumId,
       albumArt: '',
       downloadUrl: downloadUrl,
+      duration: song.duration,
+      trackNumber: song.trackNumber,
       totalBytes: 0,
     );
   }
 
-  /// Build album artwork or placeholder
+  /// Build album artwork or placeholder using CachedArtwork
   Widget _buildAlbumArt(BuildContext context) {
     final connectionService = ConnectionService();
 
-    // If song has an albumId, try to show album artwork
-    if (song.albumId != null && connectionService.apiClient != null) {
-      final artworkUrl = '${connectionService.apiClient!.baseUrl}/artwork/${song.albumId}';
+    // If song has an albumId, use CachedArtwork
+    if (song.albumId != null) {
+      final artworkUrl = connectionService.apiClient != null
+          ? '${connectionService.apiClient!.baseUrl}/artwork/${song.albumId}'
+          : null;
 
-      return ClipRRect(
+      return CachedArtwork(
+        albumId: song.albumId!,
+        artworkUrl: artworkUrl,
+        width: 48,
+        height: 48,
         borderRadius: BorderRadius.circular(4),
-        child: SizedBox(
-          width: 48,
-          height: 48,
-          child: Image.network(
-            artworkUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return _buildPlaceholder(context);
-            },
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return _buildPlaceholder(context);
-            },
-          ),
-        ),
+        fallback: _buildPlaceholder(context),
+        fallbackIcon: Icons.music_note,
+        fallbackIconSize: 24,
       );
     }
 
@@ -209,8 +206,13 @@ class SearchResultSongItem extends StatelessWidget {
 
   /// Build placeholder circle avatar
   Widget _buildPlaceholder(BuildContext context) {
-    return CircleAvatar(
-      backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
       child: Icon(
         Icons.music_note,
         color: Theme.of(context).primaryColor,

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../../services/api/connection_service.dart';
 import '../../services/offline/offline_playback_service.dart';
 import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_tile.dart';
@@ -15,7 +16,9 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   String _version = 'Loading...';
   final OfflinePlaybackService _offlineService = OfflinePlaybackService();
+  final ConnectionService _connectionService = ConnectionService();
   bool _isOfflineModeEnabled = false;
+  bool _isReconnecting = false;
   StreamSubscription<bool>? _offlineSubscription;
 
   @override
@@ -58,6 +61,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// Handle offline mode toggle - attempts to reconnect when turning off
+  Future<void> _handleOfflineModeToggle(bool enabled) async {
+    if (enabled) {
+      // Turning ON offline mode - just enable it
+      await _offlineService.setOfflineMode(true);
+      setState(() {
+        _isOfflineModeEnabled = true;
+      });
+    } else {
+      // Turning OFF offline mode - attempt to reconnect
+      setState(() {
+        _isReconnecting = true;
+      });
+
+      final restored = await _connectionService.tryRestoreConnection();
+
+      if (restored) {
+        // Connection restored - disable offline mode
+        await _offlineService.setOfflineMode(false);
+        setState(() {
+          _isOfflineModeEnabled = false;
+          _isReconnecting = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Connected to server')),
+          );
+        }
+      } else {
+        // Reconnection failed - keep offline mode enabled
+        setState(() {
+          _isReconnecting = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cannot connect to server. Staying in offline mode.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -84,18 +132,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               SettingsTile(
                 icon: Icons.wifi_off,
                 title: 'Offline Mode',
-                subtitle: _isOfflineModeEnabled
-                    ? 'Only downloaded songs available'
-                    : 'Stream music from server',
-                trailing: Switch(
-                  value: _isOfflineModeEnabled,
-                  onChanged: (value) async {
-                    await _offlineService.setOfflineMode(value);
-                    setState(() {
-                      _isOfflineModeEnabled = value;
-                    });
-                  },
-                ),
+                subtitle: _isReconnecting
+                    ? 'Reconnecting...'
+                    : (_isOfflineModeEnabled
+                        ? 'Only downloaded songs available'
+                        : 'Stream music from server'),
+                trailing: _isReconnecting
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Switch(
+                        value: _isOfflineModeEnabled,
+                        onChanged: (value) => _handleOfflineModeToggle(value),
+                      ),
               ),
             ],
           ),

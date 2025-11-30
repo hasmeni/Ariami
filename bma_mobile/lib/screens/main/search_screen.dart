@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../models/api_models.dart';
 import '../../models/song.dart';
 import '../../services/api/connection_service.dart';
 import '../../services/search_service.dart';
 import '../../services/playback_manager.dart';
+import '../../services/offline/offline_playback_service.dart';
 import '../../widgets/search/search_result_song_item.dart';
 import '../../widgets/search/search_result_album_item.dart';
 
@@ -19,6 +21,7 @@ class _SearchScreenState extends State<SearchScreen> {
   final ConnectionService _connectionService = ConnectionService();
   final SearchService _searchService = SearchService();
   final PlaybackManager _playbackManager = PlaybackManager();
+  final OfflinePlaybackService _offlineService = OfflinePlaybackService();
   final DebouncedSearch _debouncer = DebouncedSearch();
   final TextEditingController _searchController = TextEditingController();
 
@@ -29,14 +32,28 @@ class _SearchScreenState extends State<SearchScreen> {
 
   bool _isLoading = false;
   bool _isSearching = false;
+  bool _isOffline = false;
   String? _errorMessage;
+  StreamSubscription<bool>? _offlineSubscription;
 
   @override
   void initState() {
     super.initState();
+    _isOffline = _offlineService.isOfflineModeEnabled;
     _loadLibrary();
     _loadRecentSongs();
     _searchController.addListener(_onSearchChanged);
+    
+    // Listen to offline state changes
+    _offlineSubscription = _offlineService.offlineStateStream.listen((_) {
+      setState(() {
+        _isOffline = _offlineService.isOfflineModeEnabled;
+      });
+      // Reload library when coming back online
+      if (!_isOffline) {
+        _loadLibrary();
+      }
+    });
   }
 
   @override
@@ -44,11 +61,22 @@ class _SearchScreenState extends State<SearchScreen> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _debouncer.cancel();
+    _offlineSubscription?.cancel();
     super.dispose();
   }
 
   /// Load library data for searching
   Future<void> _loadLibrary() async {
+    // If offline mode is enabled, just show offline state (no error)
+    if (_offlineService.isOfflineModeEnabled) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = null;
+        _isOffline = true;
+      });
+      return;
+    }
+    
     if (_connectionService.apiClient == null) {
       setState(() {
         _errorMessage = 'Not connected to server';
@@ -161,21 +189,48 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: TextField(
-          controller: _searchController,
-          autofocus: false,
-          decoration: InputDecoration(
-            hintText: 'Search songs and albums...',
-            border: InputBorder.none,
-            hintStyle: TextStyle(color: Colors.grey[400]),
-            suffixIcon: _searchController.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: _clearSearch,
-                  )
-                : null,
-          ),
-          style: const TextStyle(fontSize: 16),
+        title: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                autofocus: false,
+                enabled: !_isOffline, // Disable search input when offline
+                decoration: InputDecoration(
+                  hintText: _isOffline 
+                      ? 'Search unavailable offline' 
+                      : 'Search songs and albums...',
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: Colors.grey[400]),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: _clearSearch,
+                        )
+                      : null,
+                ),
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+            if (_isOffline) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Offline',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
       body: _buildBody(),
@@ -185,6 +240,11 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
+    }
+
+    // Show offline state when in offline mode
+    if (_isOffline) {
+      return _buildOfflineState();
     }
 
     if (_errorMessage != null) {
@@ -362,6 +422,36 @@ class _SearchScreenState extends State<SearchScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 40.0),
             child: Text(
               'Try searching with different keywords',
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build offline state
+  Widget _buildOfflineState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_off, size: 100, color: Colors.grey[400]),
+          const SizedBox(height: 24),
+          Text(
+            'Search Unavailable',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40.0),
+            child: Text(
+              'Search requires a connection to the server.\nGo to Settings to disable offline mode.',
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),

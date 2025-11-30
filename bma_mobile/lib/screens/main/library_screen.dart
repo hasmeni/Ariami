@@ -8,6 +8,7 @@ import '../../services/playback_manager.dart';
 import '../../services/playlist_service.dart';
 import '../../services/offline/offline_playback_service.dart';
 import '../../services/download/download_manager.dart';
+import '../../services/cache/cache_manager.dart';
 import '../../widgets/library/collapsible_section.dart';
 import '../../widgets/library/album_grid_item.dart';
 import '../../widgets/library/song_list_item.dart';
@@ -28,6 +29,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final PlaylistService _playlistService = PlaylistService();
   final OfflinePlaybackService _offlineService = OfflinePlaybackService();
   final DownloadManager _downloadManager = DownloadManager();
+  final CacheManager _cacheManager = CacheManager();
 
   List<AlbumModel> _albums = [];
   List<SongModel> _songs = [];
@@ -38,8 +40,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   // Offline mode state
   bool _showDownloadedOnly = false;
   Set<String> _downloadedSongIds = {};
+  Set<String> _cachedSongIds = {};
   Set<String> _albumsWithDownloads = {};
   StreamSubscription<bool>? _offlineSubscription;
+  StreamSubscription<void>? _cacheSubscription;
 
   @override
   void initState() {
@@ -48,11 +52,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _playlistService.loadPlaylists();
     _playlistService.addListener(_onPlaylistsChanged);
     _loadDownloadedSongs();
+    _loadCachedSongs();
 
-    // Listen to offline state changes
+    // Listen to offline state changes - reload library appropriately
     _offlineSubscription = _offlineService.offlineStateStream.listen((_) {
-      _loadDownloadedSongs();
-      setState(() {});
+      _loadLibrary(); // Reload with proper offline/online handling
+    });
+
+    // Listen to cache updates
+    _cacheSubscription = _cacheManager.cacheUpdateStream.listen((_) {
+      _loadCachedSongs();
     });
   }
 
@@ -60,6 +69,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void dispose() {
     _playlistService.removeListener(_onPlaylistsChanged);
     _offlineSubscription?.cancel();
+    _cacheSubscription?.cancel();
     super.dispose();
   }
 
@@ -89,8 +99,40 @@ class _LibraryScreenState extends State<LibraryScreen> {
     });
   }
 
-  /// Load library data from server
+  /// Load list of cached song IDs
+  Future<void> _loadCachedSongs() async {
+    final cachedIds = <String>{};
+
+    // Check each song if it's cached
+    for (final song in _songs) {
+      final isCached = await _cacheManager.isSongCached(song.id);
+      if (isCached) {
+        cachedIds.add(song.id);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _cachedSongIds = cachedIds;
+      });
+    }
+  }
+
+  /// Load library data from server (or show downloaded content if offline)
   Future<void> _loadLibrary() async {
+    // If offline mode is enabled, build library from downloaded songs
+    if (_offlineService.isOfflineModeEnabled) {
+      print('[LibraryScreen] Offline mode enabled - building library from downloads');
+      await _loadDownloadedSongs();
+      _buildLibraryFromDownloads();
+      setState(() {
+        _isLoading = false;
+        _errorMessage = null;
+        _showDownloadedOnly = true; // Auto-enable downloaded filter in offline mode
+      });
+      return;
+    }
+
     if (_connectionService.apiClient == null) {
       setState(() {
         _isLoading = false;
@@ -127,6 +169,72 @@ class _LibraryScreenState extends State<LibraryScreen> {
         _errorMessage = 'Failed to load library: $e';
       });
     }
+  }
+
+  /// Build _songs and _albums lists from downloaded tasks for offline display
+  void _buildLibraryFromDownloads() {
+    final queue = _downloadManager.queue;
+    final completedTasks = queue.where((t) => t.status == DownloadStatus.completed).toList();
+    
+    print('[LibraryScreen] Building library from ${completedTasks.length} downloaded songs');
+    
+    // Build songs list from download tasks
+    final songs = <SongModel>[];
+    final albumMap = <String, List<DownloadTask>>{}; // Group songs by album
+    
+    for (final task in completedTasks) {
+      // Create SongModel from DownloadTask
+      final song = SongModel(
+        id: task.songId,
+        title: task.title,
+        artist: task.artist,
+        albumId: task.albumId,
+        duration: task.duration,
+        trackNumber: task.trackNumber,
+      );
+      songs.add(song);
+      
+      // Group by album for building album list
+      if (task.albumId != null) {
+        albumMap.putIfAbsent(task.albumId!, () => []).add(task);
+      }
+    }
+    
+    // Build albums list from grouped songs
+    final albums = <AlbumModel>[];
+    for (final entry in albumMap.entries) {
+      final albumId = entry.key;
+      final albumTasks = entry.value;
+      
+      // Use first task to get album info
+      final firstTask = albumTasks.first;
+      
+      // Calculate total duration from all songs in album
+      final totalDuration = albumTasks.fold<int>(0, (sum, task) => sum + task.duration);
+      
+      // Use albumName if available, otherwise show artist's album (for older downloads)
+      final albumTitle = firstTask.albumName ?? '${firstTask.artist} Album';
+      
+      albums.add(AlbumModel(
+        id: albumId,
+        title: albumTitle,
+        artist: firstTask.artist,
+        songCount: albumTasks.length,
+        duration: totalDuration,
+      ));
+    }
+    
+    // Sort songs by title
+    songs.sort((a, b) => a.title.compareTo(b.title));
+    // Sort albums by title
+    albums.sort((a, b) => a.title.compareTo(b.title));
+    
+    setState(() {
+      _songs = songs;
+      _albums = albums;
+    });
+    
+    print('[LibraryScreen] Built ${songs.length} songs and ${albums.length} albums from downloads');
   }
 
   @override
@@ -417,13 +525,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
       itemBuilder: (context, index) {
         final song = songsToShow[index];
         final isDownloaded = _downloadedSongIds.contains(song.id);
-        final isAvailable = !isOffline || isDownloaded;
+        final isCached = _cachedSongIds.contains(song.id);
+        final isAvailable = !isOffline || isDownloaded || isCached;
 
         return SongListItem(
           song: song,
           onTap: isAvailable ? () => _playSong(song) : null,
           onLongPress: () => _showSongOptions(song),
           isDownloaded: isDownloaded,
+          isCached: isCached,
           isAvailable: isAvailable,
         );
       },
@@ -487,18 +597,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   /// Build empty state
   Widget _buildEmptyState() {
+    final isOffline = _offlineService.isOfflineModeEnabled;
+    
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.library_music,
+            isOffline ? Icons.cloud_off : Icons.library_music,
             size: 100,
             color: Colors.grey[400],
           ),
           const SizedBox(height: 24),
           Text(
-            'Your Music Library',
+            isOffline ? 'No Downloaded Music' : 'Your Music Library',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -509,7 +621,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40.0),
             child: Text(
-              'Add music to your desktop library to see it here',
+              isOffline
+                  ? 'Download songs while online to listen offline'
+                  : 'Add music to your desktop library to see it here',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey[600],

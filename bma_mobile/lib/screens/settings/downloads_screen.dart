@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../models/download_task.dart';
 import '../../services/download/download_manager.dart';
+import '../../services/cache/cache_manager.dart';
 
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
@@ -11,12 +13,53 @@ class DownloadsScreen extends StatefulWidget {
 
 class _DownloadsScreenState extends State<DownloadsScreen> {
   final DownloadManager _downloadManager = DownloadManager();
+  final CacheManager _cacheManager = CacheManager();
   late Future<void> _initFuture;
+
+  // Cache statistics
+  double _cacheSizeMB = 0;
+  int _cachedArtworkCount = 0;
+  int _cachedSongCount = 0;
+  int _cacheLimitMB = 500;
+  StreamSubscription<void>? _cacheSubscription;
 
   @override
   void initState() {
     super.initState();
-    _initFuture = _downloadManager.initialize();
+    _initFuture = _initialize();
+  }
+
+  Future<void> _initialize() async {
+    await _downloadManager.initialize();
+    await _cacheManager.initialize();
+    await _loadCacheStats();
+
+    // Listen to cache updates
+    _cacheSubscription = _cacheManager.cacheUpdateStream.listen((_) {
+      _loadCacheStats();
+    });
+  }
+
+  Future<void> _loadCacheStats() async {
+    final sizeMB = await _cacheManager.getTotalCacheSizeMB();
+    final artworkCount = await _cacheManager.getArtworkCacheCount();
+    final songCount = await _cacheManager.getSongCacheCount();
+    final limit = _cacheManager.getCacheLimit();
+
+    if (mounted) {
+      setState(() {
+        _cacheSizeMB = sizeMB;
+        _cachedArtworkCount = artworkCount;
+        _cachedSongCount = songCount;
+        _cacheLimitMB = limit;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _cacheSubscription?.cancel();
+    super.dispose();
   }
 
   void _pauseDownload(String taskId) {
@@ -139,8 +182,11 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
               return ListView(
                 children: [
-                  // Statistics card
+                  // Downloads statistics card
                   _buildStatisticsCard(context, isDark),
+
+                  // Cache section
+                  _buildCacheSection(context, isDark),
 
                   const SizedBox(height: 16),
 
@@ -190,6 +236,169 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         },
       ),
     );
+  }
+
+  Widget _buildCacheSection(BuildContext context, bool isDark) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      color: isDark ? Colors.grey[900] : Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.cloud_done,
+                  size: 20,
+                  color: Colors.blue[400],
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Cache',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            
+            // Cache size info
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${_cacheSizeMB.toStringAsFixed(1)} MB / $_cacheLimitMB MB',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                Text(
+                  '$_cachedSongCount songs, $_cachedArtworkCount artworks',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.grey[500] : Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            
+            // Progress bar
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: _cacheLimitMB > 0 ? (_cacheSizeMB / _cacheLimitMB).clamp(0.0, 1.0) : 0.0,
+                minHeight: 6,
+                backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
+              ),
+            ),
+            const SizedBox(height: 12),
+            
+            // Cache limit slider
+            Row(
+              children: [
+                Text(
+                  'Limit:',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.grey[400] : Colors.grey[700],
+                  ),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: _cacheLimitMB.toDouble(),
+                    min: 100,
+                    max: 2000,
+                    divisions: 19,
+                    label: '$_cacheLimitMB MB',
+                    onChanged: (value) {
+                      setState(() {
+                        _cacheLimitMB = value.round();
+                      });
+                    },
+                    onChangeEnd: (value) {
+                      _cacheManager.setCacheLimit(value.round());
+                    },
+                  ),
+                ),
+                Text(
+                  '$_cacheLimitMB MB',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.grey[500] : Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 8),
+            
+            // Clear cache button
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _cacheSizeMB > 0 ? _clearCache : null,
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Clear Cache'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.red,
+                ),
+              ),
+            ),
+            
+            // Cache info text
+            Text(
+              'Cached content is auto-downloaded when you play songs. It can be cleared to free space.',
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark ? Colors.grey[600] : Colors.grey[500],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _clearCache() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Cache'),
+        content: const Text(
+          'This will remove all cached songs and artwork. Explicitly downloaded songs will not be affected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Clear', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _cacheManager.clearAllCache();
+      await _loadCacheStats();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cache cleared')),
+        );
+      }
+    }
   }
 
   Widget _buildStatisticsCard(BuildContext context, bool isDark) {
