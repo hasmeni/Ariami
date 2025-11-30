@@ -4,6 +4,7 @@ import '../../models/song.dart';
 import '../../screens/playlist/add_to_playlist_screen.dart';
 import '../../services/api/connection_service.dart';
 import '../../services/playback_manager.dart';
+import '../../services/download/download_manager.dart';
 
 /// Track list item for album detail view
 /// Shows album artwork, title, duration, and overflow menu
@@ -140,6 +141,16 @@ class TrackListItem extends StatelessWidget {
             ],
           ),
         ),
+        const PopupMenuItem<String>(
+          value: 'download',
+          child: Row(
+            children: [
+              Icon(Icons.download, size: 20),
+              SizedBox(width: 12),
+              Text('Download'),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -172,9 +183,42 @@ class TrackListItem extends StatelessWidget {
       case 'add_playlist':
         AddToPlaylistScreen.showForSong(context, track.id, albumId: track.albumId);
         return;
+      case 'download':
+        _handleDownload(context);
+        return;
       default:
         return;
     }
+  }
+
+  /// Handle download action
+  void _handleDownload(BuildContext context) {
+    final connectionService = ConnectionService();
+    final downloadManager = DownloadManager();
+
+    // Check if connected to server
+    if (connectionService.apiClient == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not connected to server')),
+      );
+      return;
+    }
+
+    // Construct download URL using actual server connection
+    final downloadUrl = '${connectionService.apiClient!.baseUrl}/download/${track.id}';
+
+    downloadManager.downloadSong(
+      songId: track.id,
+      title: track.title,
+      artist: track.artist,
+      albumArt: '',
+      downloadUrl: downloadUrl,
+      totalBytes: 0, // Will be determined during download
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added to downloads: ${track.title}')),
+    );
   }
 
   /// Format duration in seconds to mm:ss

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'settings_screen.dart';
+import '../settings/connection_settings_screen.dart';
+import '../settings/downloads_screen.dart';
 
 /// A navigator key for the settings tab's nested navigation
 final GlobalKey<NavigatorState> settingsNavigatorKey = GlobalKey<NavigatorState>();
@@ -35,6 +37,12 @@ class SettingsNavigator extends StatelessWidget {
           switch (settings.name) {
             case '/':
               page = const SettingsScreen();
+              break;
+            case '/connection':
+              page = const ConnectionSettingsScreen();
+              break;
+            case '/downloads':
+              page = const DownloadsScreen();
               break;
             // Add more routes here as settings sub-screens are added
             default:

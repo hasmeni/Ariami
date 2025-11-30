@@ -115,6 +115,9 @@ class BmaHttpServer {
     // Streaming endpoint - captures everything after /api/stream/
     router.get('/api/stream/<path|.*>', _handleStream);
 
+    // Download endpoint - for downloading full audio files
+    router.get('/api/download/<path|.*>', _handleDownload);
+
     // WebSocket endpoint
     router.get('/api/ws', webSocketHandler(_handleWebSocket));
 
@@ -401,6 +404,74 @@ class BmaHttpServer {
 
     // Stream the file
     return await _streamingService.streamFile(audioFile, request);
+  }
+
+  /// Handle download request (full file download)
+  Future<Response> _handleDownload(Request request, String path) async {
+    // Validate path is provided
+    if (path.isEmpty) {
+      return Response.badRequest(
+        body: jsonEncode({
+          'error': 'Invalid request',
+          'message': 'Song ID is required',
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+
+    // Look up file path from library by song ID
+    final filePath = _libraryManager.getSongFilePath(path);
+    if (filePath == null) {
+      return Response.notFound(
+        jsonEncode({
+          'error': 'Song not found',
+          'message': 'Song ID not found in library: $path',
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+
+    final File audioFile = File(filePath);
+
+    // Check if file exists
+    if (!await audioFile.exists()) {
+      return Response.notFound(
+        jsonEncode({
+          'error': 'File not found',
+          'message': 'Audio file does not exist: $path',
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+
+    // Check if file is in allowed music folder (security check)
+    if (_musicFolderPath != null) {
+      final canonicalPath = audioFile.absolute.path;
+      if (!canonicalPath.startsWith(_musicFolderPath!)) {
+        return Response.forbidden(
+          jsonEncode({
+            'error': 'Forbidden',
+            'message': 'File is outside music library',
+          }),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+    }
+
+    // Get file size
+    final fileSize = await audioFile.length();
+    final fileName = audioFile.path.split(Platform.pathSeparator).last;
+
+    // Return the file as a download with appropriate headers
+    return Response.ok(
+      audioFile.openRead(),
+      headers: {
+        'Content-Type': 'audio/mpeg', // Assuming MP3 files
+        'Content-Length': fileSize.toString(),
+        'Content-Disposition': 'attachment; filename="$fileName"',
+        'Cache-Control': 'public, max-age=3600', // Cache for 1 hour during download
+      },
+    );
   }
 
   /// Set music folder path for security validation

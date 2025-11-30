@@ -4,6 +4,7 @@ import '../../models/song.dart';
 import '../../screens/playlist/add_to_playlist_screen.dart';
 import '../../services/api/connection_service.dart';
 import '../../services/playback_manager.dart';
+import '../../services/download/download_manager.dart';
 
 /// Search result item for songs
 class SearchResultSongItem extends StatelessWidget {
@@ -97,6 +98,16 @@ class SearchResultSongItem extends StatelessWidget {
             ],
           ),
         ),
+        const PopupMenuItem<String>(
+          value: 'download',
+          child: Row(
+            children: [
+              Icon(Icons.download, size: 20),
+              SizedBox(width: 12),
+              Text('Download'),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -129,9 +140,42 @@ class SearchResultSongItem extends StatelessWidget {
       case 'add_playlist':
         AddToPlaylistScreen.showForSong(context, song.id, albumId: song.albumId);
         return;
+      case 'download':
+        _handleDownload(context);
+        return;
       default:
         return;
     }
+  }
+
+  /// Handle download action
+  void _handleDownload(BuildContext context) {
+    final connectionService = ConnectionService();
+    final downloadManager = DownloadManager();
+
+    // Check if connected to server
+    if (connectionService.apiClient == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not connected to server')),
+      );
+      return;
+    }
+
+    // Construct download URL using actual server connection
+    final downloadUrl = '${connectionService.apiClient!.baseUrl}/download/${song.id}';
+
+    downloadManager.downloadSong(
+      songId: song.id,
+      title: song.title,
+      artist: song.artist,
+      albumArt: '',
+      downloadUrl: downloadUrl,
+      totalBytes: 0,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added to downloads: ${song.title}')),
+    );
   }
 
   /// Build album artwork or placeholder

@@ -1,46 +1,221 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import '../../widgets/settings/settings_section.dart';
+import '../../widgets/settings/settings_tile.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
   @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  String _version = 'Loading...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      setState(() {
+        _version = packageInfo.version;
+      });
+    } catch (e) {
+      setState(() {
+        _version = 'Unknown';
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      body: Container(
+        color: isDark ? Colors.black : Colors.grey[50],
+        child: ListView(
           children: [
-            Icon(
-              Icons.settings,
-              size: 100,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Settings',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[700],
+          // Connection section
+          SettingsSection(
+            title: 'Connection',
+            tiles: [
+              SettingsTile(
+                icon: Icons.cloud_done,
+                title: 'Connection Status',
+                subtitle: 'View server connection details',
+                onTap: () {
+                  Navigator.of(context).pushNamed('/connection');
+                },
               ),
-            ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40.0),
-              child: Text(
-                'App settings and preferences',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey[600],
+              SettingsTile(
+                icon: Icons.wifi_off,
+                title: 'Offline Mode',
+                subtitle: 'Enable offline playback',
+                trailing: Switch(
+                  value: false,
+                  onChanged: (value) {
+                    // TODO: Implement offline mode toggle (Task 8.2)
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Offline mode - Coming soon')),
+                    );
+                  },
                 ),
-                textAlign: TextAlign.center,
               ),
+            ],
+          ),
+
+          // Downloads section
+          SettingsSection(
+            title: 'Downloads',
+            tiles: [
+              SettingsTile(
+                icon: Icons.high_quality,
+                title: 'Download Quality',
+                subtitle: 'High - 320 kbps',
+                onTap: () {
+                  // TODO: Navigate to download quality settings (Task 8.3)
+                  _showPlaceholder('Download Quality');
+                },
+              ),
+              SettingsTile(
+                icon: Icons.download,
+                title: 'Manage Downloads',
+                subtitle: 'View storage and downloaded songs',
+                onTap: () {
+                  Navigator.of(context).pushNamed('/downloads');
+                },
+              ),
+            ],
+          ),
+
+          // Statistics section
+          SettingsSection(
+            title: 'Streaming Stats',
+            tiles: [
+              SettingsTile(
+                icon: Icons.bar_chart,
+                title: 'Listening Statistics',
+                subtitle: 'View your listening habits',
+                onTap: () {
+                  // TODO: Navigate to streaming stats screen (Task 8.5)
+                  _showPlaceholder('Streaming Statistics');
+                },
+              ),
+              SettingsTile(
+                icon: Icons.refresh,
+                title: 'Reset Statistics',
+                subtitle: 'Clear all play counts and data',
+                onTap: () {
+                  // TODO: Implement reset stats (Task 8.5)
+                  _showResetStatsDialog();
+                },
+              ),
+            ],
+          ),
+
+          // About section
+          SettingsSection(
+            title: 'About',
+            tiles: [
+              SettingsTile(
+                icon: Icons.info,
+                title: 'Version',
+                subtitle: _version,
+                onTap: () {
+                  _showAboutDialog();
+                },
+              ),
+              SettingsTile(
+                icon: Icons.description,
+                title: 'Licenses',
+                subtitle: 'Third-party licenses',
+                onTap: () {
+                  showLicensePage(context: context);
+                },
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPlaceholder(String screen) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$screen - Coming soon')),
+    );
+  }
+
+  void _showResetStatsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset Statistics'),
+        content: const Text(
+          'This will clear all play counts and streaming data. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: Navigator.of(context).pop,
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // TODO: Implement reset stats (Task 8.5)
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Statistics reset - Coming soon')),
+              );
+            },
+            child: const Text(
+              'Reset',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAboutDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('About BMA'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Basic Music App'),
+            const SizedBox(height: 12),
+            Text(
+              'Version: $_version',
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'A music streaming application with offline support.',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: Navigator.of(context).pop,
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }

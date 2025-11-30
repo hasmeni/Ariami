@@ -3,6 +3,8 @@ import '../../models/api_models.dart';
 import '../../models/song.dart';
 import '../../screens/playlist/add_to_playlist_screen.dart';
 import '../../services/playback_manager.dart';
+import '../../services/download/download_manager.dart';
+import '../../services/api/connection_service.dart';
 
 /// Song list item widget
 /// Displays song title, artist, and duration in a list row
@@ -134,6 +136,14 @@ class SongListItem extends StatelessWidget {
                   // TODO: Artist view (future feature)
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.download),
+                title: const Text('Download'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _handleDownload(context);
+                },
+              ),
             ],
           ),
         );
@@ -181,5 +191,35 @@ class SongListItem extends StatelessWidget {
     );
 
     playbackManager.addToQueue(convertedSong);
+  }
+
+  /// Handle download action
+  void _handleDownload(BuildContext context) {
+    final connectionService = ConnectionService();
+    final downloadManager = DownloadManager();
+
+    // Check if connected to server
+    if (connectionService.apiClient == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not connected to server')),
+      );
+      return;
+    }
+
+    // Construct download URL using actual server connection
+    final downloadUrl = '${connectionService.apiClient!.baseUrl}/download/${song.id}';
+
+    downloadManager.downloadSong(
+      songId: song.id,
+      title: song.title,
+      artist: song.artist,
+      albumArt: '',
+      downloadUrl: downloadUrl,
+      totalBytes: 0, // Will be determined during download
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added to downloads: ${song.title}')),
+    );
   }
 }
