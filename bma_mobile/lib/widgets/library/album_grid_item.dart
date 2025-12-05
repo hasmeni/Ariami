@@ -7,6 +7,7 @@ import '../common/cached_artwork.dart';
 class AlbumGridItem extends StatelessWidget {
   final AlbumModel album;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool isAvailable;
   final bool hasDownloadedSongs;
 
@@ -14,6 +15,7 @@ class AlbumGridItem extends StatelessWidget {
     super.key,
     required this.album,
     this.onTap,
+    this.onLongPress,
     this.isAvailable = true,
     this.hasDownloadedSongs = false,
   });
@@ -26,6 +28,7 @@ class AlbumGridItem extends StatelessWidget {
       opacity: opacity,
       child: InkWell(
         onTap: isAvailable ? onTap : null,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(4),
         child: Stack(
           children: [

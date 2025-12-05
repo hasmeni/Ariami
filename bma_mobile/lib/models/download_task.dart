@@ -10,6 +10,7 @@ class DownloadTask {
   final String artist;
   final String? albumId;
   final String? albumName;
+  final String? albumArtist; // The album's artist (not song artist which may include featured artists)
   final String albumArt;
   final String downloadUrl;
   final int duration; // Duration in seconds
@@ -31,6 +32,7 @@ class DownloadTask {
     required this.artist,
     this.albumId,
     this.albumName,
+    this.albumArtist,
     required this.albumArt,
     required this.downloadUrl,
     this.duration = 0,
@@ -52,6 +54,7 @@ class DownloadTask {
       'artist': artist,
       'albumId': albumId,
       'albumName': albumName,
+      'albumArtist': albumArtist,
       'albumArt': albumArt,
       'downloadUrl': downloadUrl,
       'duration': duration,
@@ -74,6 +77,7 @@ class DownloadTask {
       artist: json['artist'] as String,
       albumId: json['albumId'] as String?,
       albumName: json['albumName'] as String?,
+      albumArtist: json['albumArtist'] as String?,
       albumArt: json['albumArt'] as String,
       downloadUrl: json['downloadUrl'] as String,
       duration: json['duration'] as int? ?? 0,

@@ -45,7 +45,8 @@ class AlbumArtworkHeader extends StatelessWidget {
   /// Build album artwork with fallback
   Widget _buildArtwork() {
     // If we have an albumId, use CachedArtwork for automatic caching
-    if (albumId != null && coverArt != null && coverArt!.isNotEmpty) {
+    // CachedArtwork checks cache first, so it works even without a URL (offline mode)
+    if (albumId != null) {
       return CachedArtwork(
         albumId: albumId!,
         artworkUrl: coverArt,

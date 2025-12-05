@@ -6,6 +6,7 @@ import '../../models/api_models.dart';
 class PlaylistCard extends StatelessWidget {
   final PlaylistModel playlist;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   /// List of artwork URLs for the collage (up to 4)
   final List<String> artworkUrls;
@@ -17,6 +18,7 @@ class PlaylistCard extends StatelessWidget {
     super.key,
     required this.playlist,
     required this.onTap,
+    this.onLongPress,
     this.artworkUrls = const [],
     this.isLikedSongs = false,
   });
@@ -25,6 +27,7 @@ class PlaylistCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

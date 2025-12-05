@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/api/connection_service.dart';
+import '../../services/offline/offline_playback_service.dart';
 import '../../widgets/settings/connection_status_card.dart';
 
 class ConnectionSettingsScreen extends StatefulWidget {
@@ -12,12 +14,31 @@ class ConnectionSettingsScreen extends StatefulWidget {
 
 class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
   final ConnectionService _connectionService = ConnectionService();
+  final OfflinePlaybackService _offlineService = OfflinePlaybackService();
   late Stream<bool> _connectionStream;
+  StreamSubscription<bool>? _offlineSubscription;
+  bool _isOfflineModeEnabled = false;
 
   @override
   void initState() {
     super.initState();
     _connectionStream = _connectionService.connectionStateStream;
+    _isOfflineModeEnabled = _offlineService.isOfflineModeEnabled;
+    
+    // Listen to offline state changes
+    _offlineSubscription = _offlineService.offlineStateStream.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isOfflineModeEnabled = _offlineService.isOfflineModeEnabled;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _offlineSubscription?.cancel();
+    super.dispose();
   }
 
   void _handleDisconnect() {
@@ -101,28 +122,65 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
         color: isDark ? Colors.black : Colors.grey[50],
         child: ListView(
           children: [
+            // Offline Mode Banner
+            if (_isOfflineModeEnabled) ...[
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.orange.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.wifi_off, color: Colors.orange, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Offline mode is enabled. Disable it in Settings to connect to the server.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.orange[800],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            
             // Connection Status Card
             StreamBuilder<bool>(
               stream: _connectionStream,
               initialData: _connectionService.isConnected,
               builder: (context, snapshot) {
                 final isConnected = snapshot.data ?? false;
-                final status = isConnected
-                    ? ConnectionStatus.connected
-                    : ConnectionStatus.offline;
+                
+                // Offline mode takes priority
+                final ConnectionStatus status;
+                if (_isOfflineModeEnabled) {
+                  status = ConnectionStatus.offline;
+                } else if (isConnected) {
+                  status = ConnectionStatus.connected;
+                } else {
+                  status = ConnectionStatus.offline;
+                }
 
                 return ConnectionStatusCard(
                   status: status,
                   serverInfo: _connectionService.serverInfo,
                   lastSyncTime: DateTime.now(),
-                  onRetry: isConnected ? null : _retryConnection,
+                  onRetry: (isConnected || _isOfflineModeEnabled) ? null : _retryConnection,
                 );
               },
             ),
             const SizedBox(height: 24),
 
-            // Server Information Section
-            if (_connectionService.serverInfo != null) ...[
+            // Server Information Section (hide when offline mode is enabled)
+            if (_connectionService.serverInfo != null && !_isOfflineModeEnabled) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
@@ -205,20 +263,22 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
               const SizedBox(height: 24),
             ],
 
-            // Disconnect Button
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ElevatedButton.icon(
-                onPressed: _handleDisconnect,
-                icon: const Icon(Icons.logout),
-                label: const Text('Disconnect Server'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+            // Disconnect Button (hide when offline mode is enabled)
+            if (!_isOfflineModeEnabled) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: ElevatedButton.icon(
+                  onPressed: _handleDisconnect,
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Disconnect Server'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
                 ),
               ),
-            ),
+            ],
             const SizedBox(height: 32),
           ],
         ),

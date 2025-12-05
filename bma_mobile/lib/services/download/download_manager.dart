@@ -92,6 +92,7 @@ class DownloadManager {
     required String artist,
     String? albumId,
     String? albumName,
+    String? albumArtist,
     required String albumArt,
     required String downloadUrl,
     int duration = 0,
@@ -119,6 +120,7 @@ class DownloadManager {
       artist: artist,
       albumId: albumId,
       albumName: albumName,
+      albumArtist: albumArtist,
       albumArt: albumArt,
       downloadUrl: downloadUrl,
       duration: duration,
@@ -136,6 +138,7 @@ class DownloadManager {
     required List<Map<String, dynamic>> songs,
     String? albumId,
     String? albumName,
+    String? albumArtist,
   }) async {
     await _ensureInitialized();
 
@@ -154,6 +157,7 @@ class DownloadManager {
         artist: song['artist'] as String,
         albumId: albumId ?? song['albumId'] as String?,
         albumName: albumName ?? song['albumName'] as String?,
+        albumArtist: albumArtist ?? song['albumArtist'] as String?,
         albumArt: song['albumArt'] as String,
         downloadUrl: song['downloadUrl'] as String,
         duration: song['duration'] as int? ?? 0,
@@ -383,8 +387,6 @@ class DownloadManager {
   }
 
   /// Get download settings
-  String getDownloadQuality() => _database.getDownloadQuality();
-
   bool getWifiOnly() => _database.getWifiOnly();
 
   bool getAutoDownloadFavorites() => _database.getAutoDownloadFavorites();
@@ -392,9 +394,6 @@ class DownloadManager {
   int? getStorageLimit() => _database.getStorageLimit();
 
   /// Set download settings
-  Future<void> setDownloadQuality(String quality) =>
-      _database.setDownloadQuality(quality);
-
   Future<void> setWifiOnly(bool wifiOnly) => _database.setWifiOnly(wifiOnly);
 
   Future<void> setAutoDownloadFavorites(bool auto) =>

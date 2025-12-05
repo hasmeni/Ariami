@@ -17,6 +17,7 @@ class TrackListItem extends StatelessWidget {
   final bool isCached;
   final bool isAvailable;
   final String? albumName;
+  final String? albumArtist;
 
   const TrackListItem({
     super.key,
@@ -27,6 +28,7 @@ class TrackListItem extends StatelessWidget {
     this.isCached = false,
     this.isAvailable = true,
     this.albumName,
+    this.albumArtist,
   });
 
   @override
@@ -270,6 +272,7 @@ class TrackListItem extends StatelessWidget {
       artist: track.artist,
       albumId: track.albumId,
       albumName: albumName,
+      albumArtist: albumArtist,
       albumArt: '',
       downloadUrl: downloadUrl,
       duration: track.duration,

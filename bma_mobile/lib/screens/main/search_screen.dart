@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../models/api_models.dart';
+import '../../models/download_task.dart';
 import '../../models/song.dart';
 import '../../services/api/connection_service.dart';
 import '../../services/search_service.dart';
 import '../../services/playback_manager.dart';
+import '../../services/download/download_manager.dart';
 import '../../services/offline/offline_playback_service.dart';
 import '../../widgets/search/search_result_song_item.dart';
 import '../../widgets/search/search_result_album_item.dart';
@@ -22,6 +24,7 @@ class _SearchScreenState extends State<SearchScreen> {
   final SearchService _searchService = SearchService();
   final PlaybackManager _playbackManager = PlaybackManager();
   final OfflinePlaybackService _offlineService = OfflinePlaybackService();
+  final DownloadManager _downloadManager = DownloadManager();
   final DebouncedSearch _debouncer = DebouncedSearch();
   final TextEditingController _searchController = TextEditingController();
 
@@ -46,11 +49,12 @@ class _SearchScreenState extends State<SearchScreen> {
     
     // Listen to offline state changes
     _offlineSubscription = _offlineService.offlineStateStream.listen((_) {
+      final wasOffline = _isOffline;
       setState(() {
         _isOffline = _offlineService.isOfflineModeEnabled;
       });
-      // Reload library when coming back online
-      if (!_isOffline) {
+      // Reload library when offline state changes
+      if (wasOffline != _isOffline) {
         _loadLibrary();
       }
     });
@@ -67,13 +71,15 @@ class _SearchScreenState extends State<SearchScreen> {
 
   /// Load library data for searching
   Future<void> _loadLibrary() async {
-    // If offline mode is enabled, just show offline state (no error)
+    // If offline mode is enabled, load downloaded songs for offline search
     if (_offlineService.isOfflineModeEnabled) {
       setState(() {
-        _isLoading = false;
+        _isLoading = true;
         _errorMessage = null;
         _isOffline = true;
       });
+      
+      await _loadDownloadedSongs();
       return;
     }
     
@@ -118,6 +124,54 @@ class _SearchScreenState extends State<SearchScreen> {
         _errorMessage = 'Failed to load library: $e';
       });
     }
+  }
+
+  /// Load downloaded songs for offline search
+  Future<void> _loadDownloadedSongs() async {
+    // Get completed downloads from DownloadManager
+    final downloadedTasks = _downloadManager.queue
+        .where((task) => task.status == DownloadStatus.completed)
+        .toList();
+
+    // Convert DownloadTask to SongModel
+    final songs = downloadedTasks.map((task) => SongModel(
+      id: task.songId,
+      title: task.title,
+      artist: task.artist,
+      albumId: task.albumId,
+      duration: task.duration,
+      trackNumber: task.trackNumber,
+    )).toList();
+
+    // Group songs by album to create AlbumModel entries
+    final albumMap = <String, List<DownloadTask>>{};
+    for (final task in downloadedTasks) {
+      if (task.albumId != null && task.albumName != null) {
+        albumMap.putIfAbsent(task.albumId!, () => []).add(task);
+      }
+    }
+
+    // Create AlbumModel for each unique album
+    final albums = albumMap.entries.map((entry) {
+      final albumTasks = entry.value;
+      final firstTask = albumTasks.first;
+      final totalDuration = albumTasks.fold<int>(0, (sum, t) => sum + t.duration);
+      
+      return AlbumModel(
+        id: entry.key,
+        title: firstTask.albumName!,
+        artist: firstTask.albumArtist ?? firstTask.artist,
+        coverArt: firstTask.albumArt,
+        songCount: albumTasks.length,
+        duration: totalDuration,
+      );
+    }).toList();
+
+    setState(() {
+      _allSongs = songs;
+      _allAlbums = albums;
+      _isLoading = false;
+    });
   }
 
   /// Load recent songs from storage
@@ -195,10 +249,9 @@ class _SearchScreenState extends State<SearchScreen> {
               child: TextField(
                 controller: _searchController,
                 autofocus: false,
-                enabled: !_isOffline, // Disable search input when offline
                 decoration: InputDecoration(
                   hintText: _isOffline 
-                      ? 'Search unavailable offline' 
+                      ? 'Search downloaded music...' 
                       : 'Search songs and albums...',
                   border: InputBorder.none,
                   hintStyle: TextStyle(color: Colors.grey[400]),
@@ -242,9 +295,9 @@ class _SearchScreenState extends State<SearchScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Show offline state when in offline mode
-    if (_isOffline) {
-      return _buildOfflineState();
+    // Show "no downloaded music" state when offline with no downloads
+    if (_isOffline && _allSongs.isEmpty) {
+      return _buildNoDownloadsState();
     }
 
     if (_errorMessage != null) {
@@ -256,7 +309,10 @@ class _SearchScreenState extends State<SearchScreen> {
       return _buildSearchResults();
     }
 
-    // Show recent searches when not searching
+    // Show recent searches when not searching (or start searching state for offline)
+    if (_isOffline) {
+      return _buildOfflineStartSearchingState();
+    }
     return _buildRecentSearches();
   }
 
@@ -431,16 +487,16 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  /// Build offline state
-  Widget _buildOfflineState() {
+  /// Build "no downloaded music" state for offline mode
+  Widget _buildNoDownloadsState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.cloud_off, size: 100, color: Colors.grey[400]),
+          Icon(Icons.download_outlined, size: 100, color: Colors.grey[400]),
           const SizedBox(height: 24),
           Text(
-            'Search Unavailable',
+            'No Downloaded Music',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -451,7 +507,37 @@ class _SearchScreenState extends State<SearchScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40.0),
             child: Text(
-              'Search requires a connection to the server.\nGo to Settings to disable offline mode.',
+              'Download music to search while offline.\nGo to Settings to disable offline mode.',
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build "start searching" state for offline mode with downloads available
+  Widget _buildOfflineStartSearchingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search, size: 100, color: Colors.grey[400]),
+          const SizedBox(height: 24),
+          Text(
+            'Search Downloaded Music',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40.0),
+            child: Text(
+              '${_allSongs.length} song${_allSongs.length == 1 ? '' : 's'} available offline',
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),

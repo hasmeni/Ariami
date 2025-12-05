@@ -224,6 +224,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                 isCached: isCached,
                 isAvailable: isAvailable,
                 albumName: widget.album.title,
+                albumArtist: widget.album.artist,
               );
             },
             childCount: _albumDetail!.songs.length,

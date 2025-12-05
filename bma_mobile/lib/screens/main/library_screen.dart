@@ -215,10 +215,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
       // Use albumName if available, otherwise show artist's album (for older downloads)
       final albumTitle = firstTask.albumName ?? '${firstTask.artist} Album';
       
+      // Use albumArtist if available, otherwise fall back to song artist
+      // This ensures featuring artists don't show as the album artist
+      final artist = firstTask.albumArtist ?? firstTask.artist;
+      
       albums.add(AlbumModel(
         id: albumId,
         title: albumTitle,
-        artist: firstTask.artist,
+        artist: artist,
         songCount: albumTasks.length,
         duration: totalDuration,
       ));
@@ -424,6 +428,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             return PlaylistCard(
               playlist: likedSongsPlaylist,
               onTap: () => _openPlaylist(likedSongsPlaylist),
+              onLongPress: () => _showPlaylistContextMenu(likedSongsPlaylist),
               artworkUrls: _getPlaylistArtworkUrls(likedSongsPlaylist),
               isLikedSongs: true, // Special flag for styling
             );
@@ -435,6 +440,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           return PlaylistCard(
             playlist: playlist,
             onTap: () => _openPlaylist(playlist),
+            onLongPress: () => _showPlaylistContextMenu(playlist),
             artworkUrls: _getPlaylistArtworkUrls(playlist),
           );
         },
@@ -484,6 +490,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           return AlbumGridItem(
             album: album,
             onTap: isAvailable ? () => _openAlbum(album) : null,
+            onLongPress: () => _showAlbumContextMenu(album),
             isAvailable: isAvailable,
             hasDownloadedSongs: hasDownloads,
           );
@@ -701,5 +708,315 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   void _showSongOptions(SongModel song) {
     // Long press handler - menu shown in SongListItem widget
+  }
+
+  /// Show context menu for album long press
+  void _showAlbumContextMenu(AlbumModel album) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header with album info
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        color: Colors.grey[300],
+                        child: album.coverArt != null
+                            ? Image.network(
+                                album.coverArt!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(Icons.album),
+                              )
+                            : const Icon(Icons.album),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            album.title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            album.artist,
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.play_arrow),
+                title: const Text('Play Album'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openAlbum(album);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.queue_music),
+                title: const Text('Add to Queue'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _addAlbumToQueue(album);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.download),
+                title: const Text('Download Album'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _downloadAlbum(album);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show context menu for playlist long press
+  void _showPlaylistContextMenu(PlaylistModel playlist) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header with playlist info
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.purple[400],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Icon(Icons.queue_music, color: Colors.white),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            playlist.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '${playlist.songCount} song${playlist.songCount != 1 ? 's' : ''}',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.play_arrow),
+                title: const Text('Play Playlist'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openPlaylist(playlist);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.queue_music),
+                title: const Text('Add to Queue'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _addPlaylistToQueue(playlist);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.download),
+                title: const Text('Download Playlist'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _downloadPlaylist(playlist);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Add all songs from album to queue
+  Future<void> _addAlbumToQueue(AlbumModel album) async {
+    if (_connectionService.apiClient == null) return;
+
+    try {
+      final albumDetail = await _connectionService.apiClient!.getAlbumDetail(album.id);
+      for (final track in albumDetail.songs) {
+        final song = Song(
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          album: album.title,
+          albumId: track.albumId,
+          duration: Duration(seconds: track.duration),
+          filePath: track.id,
+          fileSize: 0,
+          modifiedTime: DateTime.now(),
+          trackNumber: track.trackNumber,
+        );
+        _playbackManager.addToQueue(song);
+      }
+    } catch (e) {
+      print('[LibraryScreen] Failed to add album to queue: $e');
+    }
+  }
+
+  /// Add all songs from playlist to queue
+  Future<void> _addPlaylistToQueue(PlaylistModel playlist) async {
+    if (_connectionService.apiClient == null) return;
+
+    try {
+      for (final songId in playlist.songIds) {
+        // Find the song in our local library first
+        final song = _songs.firstWhere(
+          (s) => s.id == songId,
+          orElse: () => SongModel(id: songId, title: 'Unknown', artist: 'Unknown', duration: 0),
+        );
+        
+        final playSong = Song(
+          id: song.id,
+          title: song.title,
+          artist: song.artist,
+          album: null,
+          albumId: song.albumId,
+          duration: Duration(seconds: song.duration),
+          filePath: song.id,
+          fileSize: 0,
+          modifiedTime: DateTime.now(),
+          trackNumber: song.trackNumber,
+        );
+        _playbackManager.addToQueue(playSong);
+      }
+    } catch (e) {
+      print('[LibraryScreen] Failed to add playlist to queue: $e');
+    }
+  }
+
+  /// Download all songs from an album
+  Future<void> _downloadAlbum(AlbumModel album) async {
+    if (_connectionService.apiClient == null) return;
+
+    try {
+      final albumDetail = await _connectionService.apiClient!.getAlbumDetail(album.id);
+      final baseUrl = _connectionService.apiClient!.baseUrl;
+
+      // Build song data list for downloadAlbum
+      final songDataList = albumDetail.songs.map((track) => {
+        'id': track.id,
+        'title': track.title,
+        'artist': track.artist,
+        'albumId': album.id,
+        'albumName': album.title,
+        'albumArtist': album.artist,
+        'albumArt': album.coverArt ?? '',
+        'downloadUrl': '$baseUrl/download/${track.id}',
+        'duration': track.duration,
+        'trackNumber': track.trackNumber,
+        'fileSize': 0,
+      }).toList();
+
+      await _downloadManager.downloadAlbum(
+        songs: songDataList,
+        albumId: album.id,
+        albumName: album.title,
+        albumArtist: album.artist,
+      );
+    } catch (e) {
+      print('[LibraryScreen] Failed to download album: $e');
+    }
+  }
+
+  /// Download all songs from a playlist
+  Future<void> _downloadPlaylist(PlaylistModel playlist) async {
+    if (_connectionService.apiClient == null) return;
+
+    try {
+      final baseUrl = _connectionService.apiClient!.baseUrl;
+
+      for (final songId in playlist.songIds) {
+        // Find song in our local library
+        final song = _songs.firstWhere(
+          (s) => s.id == songId,
+          orElse: () => SongModel(id: songId, title: 'Unknown', artist: 'Unknown', duration: 0),
+        );
+
+        // Get album info if available
+        final albumId = playlist.songAlbumIds[songId];
+        String? albumName;
+        String? albumArtist;
+        
+        // Try to find album info from local albums
+        if (albumId != null) {
+          final albumMatch = _albums.where((a) => a.id == albumId);
+          if (albumMatch.isNotEmpty) {
+            albumName = albumMatch.first.title;
+            albumArtist = albumMatch.first.artist;
+          }
+        }
+
+        await _downloadManager.downloadSong(
+          songId: song.id,
+          title: song.title,
+          artist: song.artist,
+          albumId: albumId,
+          albumName: albumName,
+          albumArtist: albumArtist,
+          albumArt: albumId != null ? '$baseUrl/artwork/$albumId' : '',
+          downloadUrl: '$baseUrl/download/${song.id}',
+          duration: song.duration,
+          trackNumber: song.trackNumber,
+          totalBytes: 0,
+        );
+      }
+    } catch (e) {
+      print('[LibraryScreen] Failed to download playlist: $e');
+    }
   }
 }

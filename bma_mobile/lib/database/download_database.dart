@@ -43,16 +43,6 @@ class DownloadDatabase {
   // DOWNLOAD SETTINGS
   // ============================================================================
 
-  /// Save download quality setting (high, medium, low)
-  Future<void> setDownloadQuality(String quality) async {
-    await _prefs.setString('download_quality', quality);
-  }
-
-  /// Get download quality setting
-  String getDownloadQuality() {
-    return _prefs.getString('download_quality') ?? 'medium';
-  }
-
   /// Set WiFi-only download toggle
   Future<void> setWifiOnly(bool wifiOnly) async {
     await _prefs.setBool('download_wifi_only', wifiOnly);

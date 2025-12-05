@@ -37,16 +37,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _initOfflineService() async {
-    await _offlineService.initialize();
+    // Read current value immediately (in case service is already initialized)
+    // This prevents the switch from animating on page load
     setState(() {
       _isOfflineModeEnabled = _offlineService.isOfflineModeEnabled;
     });
 
-    // Listen for offline state changes
-    _offlineSubscription = _offlineService.offlineStateStream.listen((_) {
+    await _offlineService.initialize();
+
+    if (mounted) {
       setState(() {
         _isOfflineModeEnabled = _offlineService.isOfflineModeEnabled;
       });
+    }
+
+    // Listen for offline state changes
+    _offlineSubscription = _offlineService.offlineStateStream.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isOfflineModeEnabled = _offlineService.isOfflineModeEnabled;
+        });
+      }
     });
   }
 
@@ -86,11 +97,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _isOfflineModeEnabled = false;
           _isReconnecting = false;
         });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Connected to server')),
-          );
-        }
       } else {
         // Reconnection failed - keep offline mode enabled
         setState(() {
@@ -158,15 +164,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Downloads',
             tiles: [
               SettingsTile(
-                icon: Icons.high_quality,
-                title: 'Download Quality',
-                subtitle: 'High - 320 kbps',
-                onTap: () {
-                  // TODO: Navigate to download quality settings (Task 8.3)
-                  _showPlaceholder('Download Quality');
-                },
-              ),
-              SettingsTile(
                 icon: Icons.download,
                 title: 'Manage Downloads',
                 subtitle: 'View storage and downloaded songs',
@@ -227,12 +224,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  void _showPlaceholder(String screen) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$screen - Coming soon')),
     );
   }
 
