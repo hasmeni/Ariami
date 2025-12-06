@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/song_stats.dart';
 import '../../services/stats/streaming_stats_service.dart';
 import '../../services/api/connection_service.dart';
+import '../../widgets/common/cached_artwork.dart';
 
 /// Screen displaying streaming statistics and listening data
 class StreamingStatsScreen extends StatefulWidget {
@@ -235,46 +236,18 @@ class _StreamingStatsScreenState extends State<StreamingStatsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          // Album artwork
-          if (stat.albumId != null && baseUrl != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                '$baseUrl/artwork/${stat.albumId}',
-                width: 56,
-                height: 56,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.album,
-                      color: Colors.grey[600],
-                      size: 32,
-                    ),
-                  );
-                },
-              ),
-            )
-          else
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.album,
-                color: Colors.grey[600],
-                size: 32,
-              ),
-            ),
+          // Album artwork (uses cache for offline support)
+          CachedArtwork(
+            albumId: stat.albumId ?? '',
+            artworkUrl: baseUrl != null && stat.albumId != null
+                ? '$baseUrl/artwork/${stat.albumId}'
+                : null,
+            width: 56,
+            height: 56,
+            fit: BoxFit.cover,
+            borderRadius: BorderRadius.circular(8),
+            fallbackIconSize: 32,
+          ),
           const SizedBox(width: 12),
 
           // Rank number
@@ -361,9 +334,6 @@ class _StreamingStatsScreenState extends State<StreamingStatsScreen> {
               if (mounted) {
                 Navigator.pop(context);
                 setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Statistics reset')),
-                );
               }
             },
             child: const Text(

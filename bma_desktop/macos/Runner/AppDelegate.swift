@@ -3,8 +3,33 @@ import FlutterMacOS
 
 @main
 class AppDelegate: FlutterAppDelegate {
+  override func applicationDidFinishLaunching(_ notification: Notification) {
+    // Set up method channel for dock icon visibility control
+    if let controller = mainFlutterWindow?.contentViewController as? FlutterViewController {
+      let channel = FlutterMethodChannel(
+        name: "bma_desktop/dock",
+        binaryMessenger: controller.engine.binaryMessenger
+      )
+      
+      channel.setMethodCallHandler { (call, result) in
+        switch call.method {
+        case "hideDockIcon":
+          NSApp.setActivationPolicy(.accessory)
+          result(nil)
+        case "showDockIcon":
+          NSApp.setActivationPolicy(.regular)
+          NSApp.activate(ignoringOtherApps: true)
+          result(nil)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+    }
+  }
+  
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    return true
+    // Return false to keep app running when window is hidden to system tray
+    return false
   }
 
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
