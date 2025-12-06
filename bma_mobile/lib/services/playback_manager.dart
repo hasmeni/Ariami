@@ -370,6 +370,7 @@ class PlaybackManager extends ChangeNotifier {
       print('[PlaybackManager] Playback source: $playbackSource');
 
       String audioUrl;
+      Uri? artworkUri;
 
       switch (playbackSource) {
         case PlaybackSource.local:
@@ -380,6 +381,15 @@ class PlaybackManager extends ChangeNotifier {
           }
           audioUrl = 'file://$localPath';
           print('[PlaybackManager] Playing from downloaded file: $audioUrl');
+          
+          // Get cached artwork for offline playback
+          if (song.albumId != null) {
+            final cachedArtworkPath = await _cacheManager.getArtworkPath(song.albumId!);
+            if (cachedArtworkPath != null) {
+              artworkUri = Uri.file(cachedArtworkPath);
+              print('[PlaybackManager] Using cached artwork: $artworkUri');
+            }
+          }
           break;
 
         case PlaybackSource.cached:
@@ -390,6 +400,15 @@ class PlaybackManager extends ChangeNotifier {
           }
           audioUrl = 'file://$cachedPath';
           print('[PlaybackManager] Playing from cached file: $audioUrl');
+          
+          // Get cached artwork for offline playback
+          if (song.albumId != null) {
+            final cachedArtworkPath = await _cacheManager.getArtworkPath(song.albumId!);
+            if (cachedArtworkPath != null) {
+              artworkUri = Uri.file(cachedArtworkPath);
+              print('[PlaybackManager] Using cached artwork: $artworkUri');
+            }
+          }
           break;
 
         case PlaybackSource.stream:
@@ -402,6 +421,12 @@ class PlaybackManager extends ChangeNotifier {
           print('[PlaybackManager] Connected! Base URL: ${_connectionService.apiClient!.baseUrl}');
           audioUrl = '${_connectionService.apiClient!.baseUrl}/stream/${song.filePath}';
           print('[PlaybackManager] Streaming from server: $audioUrl');
+          
+          // Use server URL for artwork when streaming
+          if (song.albumId != null) {
+            artworkUri = Uri.parse('${_connectionService.apiClient!.baseUrl}/artwork/${song.albumId}');
+            print('[PlaybackManager] Using server artwork: $artworkUri');
+          }
 
           // Trigger background caching of the song for offline use
           _cacheSongInBackground(song);
@@ -415,7 +440,7 @@ class PlaybackManager extends ChangeNotifier {
       // If we have a restored position, load without playing, seek, then play
       if (_restoredPosition != null) {
         // Load the song WITHOUT starting playback
-        await _audioPlayer.loadSong(song, audioUrl);
+        await _audioPlayer.loadSong(song, audioUrl, artworkUri: artworkUri);
 
         // Wait for the audio player to be fully ready before seeking
         await Future.delayed(const Duration(milliseconds: 500));
@@ -432,7 +457,7 @@ class PlaybackManager extends ChangeNotifier {
         _restoredPosition = null; // Clear so it doesn't affect next song
       } else {
         // No restored position - play normally from the beginning
-        await _audioPlayer.playSong(song, audioUrl);
+        await _audioPlayer.playSong(song, audioUrl, artworkUri: artworkUri);
       }
 
       // Track stats for this song playback

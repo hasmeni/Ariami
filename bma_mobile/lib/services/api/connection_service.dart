@@ -168,10 +168,18 @@ class ConnectionService {
         ),
       );
 
-      _apiClient = ApiClient(serverInfo: serverInfo);
+      // Quick reachability check first (fails fast if server is down)
+      if (!await _isServerReachable(serverInfo)) {
+        print('Server not reachable - skipping connection attempt');
+        _serverInfo = serverInfo; // Keep server info for later reconnect
+        return false;
+      }
+
+      // Server is reachable - try full connection with reduced timeout
+      _apiClient = ApiClient(serverInfo: serverInfo, timeout: const Duration(seconds: 3));
       _serverInfo = serverInfo;
 
-      // Test if server is reachable
+      // Test if server API is responding
       await _apiClient!.ping();
 
       // Re-register with server to get fresh session
@@ -232,6 +240,28 @@ class ConnectionService {
       } catch (e) {
         print('Failed to parse stored server info: $e');
       }
+    }
+  }
+
+  // ============================================================================
+  // REACHABILITY CHECK
+  // ============================================================================
+
+  /// Quick check if server is reachable at TCP level
+  /// Returns true if we can establish a socket connection
+  /// Used for fast-fail detection when server is completely unreachable
+  Future<bool> _isServerReachable(ServerInfo serverInfo, {Duration timeout = const Duration(milliseconds: 1500)}) async {
+    try {
+      final socket = await Socket.connect(
+        serverInfo.server,
+        serverInfo.port,
+        timeout: timeout,
+      );
+      await socket.close();
+      return true;
+    } catch (e) {
+      print('Server not reachable: $e');
+      return false;
     }
   }
 

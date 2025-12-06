@@ -19,7 +19,7 @@ class AudioPlayerService {
   }
 
   /// Load a song without starting playback (for seeking before play)
-  Future<void> loadSong(Song song, String streamUrl) async {
+  Future<void> loadSong(Song song, String streamUrl, {Uri? artworkUri}) async {
     print('[AudioPlayerService] loadSong() called');
 
     // Check if audioHandler is initialized
@@ -29,7 +29,7 @@ class AudioPlayerService {
     }
 
     try {
-      await audioHandler!.loadSong(song, streamUrl);
+      await audioHandler!.loadSong(song, streamUrl, artworkUri: artworkUri);
     } catch (e) {
       print('[AudioPlayerService] Error loading song: $e');
       rethrow;
@@ -38,7 +38,7 @@ class AudioPlayerService {
 
   /// Play audio from URL with song metadata
   /// This is the NEW method that should be used - it provides metadata for the notification
-  Future<void> playSong(Song song, String streamUrl) async {
+  Future<void> playSong(Song song, String streamUrl, {Uri? artworkUri}) async {
     print('[AudioPlayerService] ========================================');
     print('[AudioPlayerService] playSong() called');
     print('[AudioPlayerService] Checking audioHandler status...');
@@ -55,7 +55,7 @@ class AudioPlayerService {
 
     try {
       print('[AudioPlayerService] playSong() - routing to audioHandler');
-      await audioHandler!.playSong(song, streamUrl);
+      await audioHandler!.playSong(song, streamUrl, artworkUri: artworkUri);
     } catch (e) {
       print('[AudioPlayerService] Error playing song: $e');
       rethrow;

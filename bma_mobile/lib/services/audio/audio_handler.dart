@@ -51,14 +51,14 @@ class BmaAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   /// Convert Song model to MediaItem for audio_service
-  MediaItem _songToMediaItem(Song song, String streamUrl) {
+  MediaItem _songToMediaItem(Song song, String streamUrl, {Uri? artworkUri}) {
     return MediaItem(
       id: song.id,
       title: song.title,
       artist: song.artist,
       album: song.album ?? 'Unknown Album',
       duration: song.duration,
-      artUri: _getAlbumArtUri(song, streamUrl),
+      artUri: artworkUri ?? _getAlbumArtUri(song, streamUrl),
       extras: {
         'filePath': song.filePath,
         'streamUrl': streamUrl,
@@ -88,16 +88,17 @@ class BmaAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   /// Load a song without starting playback (for seeking before play)
-  Future<void> loadSong(Song song, String streamUrl) async {
+  Future<void> loadSong(Song song, String streamUrl, {Uri? artworkUri}) async {
     print('[BmaAudioHandler] loadSong() called');
     print('[BmaAudioHandler] Song: ${song.title} by ${song.artist}');
     print('[BmaAudioHandler] Stream URL: $streamUrl');
+    print('[BmaAudioHandler] Artwork URI: $artworkUri');
 
     try {
       _currentSong = song;
 
       // Create MediaItem for the song
-      final mediaItem = _songToMediaItem(song, streamUrl);
+      final mediaItem = _songToMediaItem(song, streamUrl, artworkUri: artworkUri);
 
       // Update the media item in the notification
       this.mediaItem.add(mediaItem);
@@ -114,14 +115,15 @@ class BmaAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   /// Play a song from a stream URL
-  Future<void> playSong(Song song, String streamUrl) async {
+  Future<void> playSong(Song song, String streamUrl, {Uri? artworkUri}) async {
     print('[BmaAudioHandler] playSong() called');
     print('[BmaAudioHandler] Song: ${song.title} by ${song.artist}');
     print('[BmaAudioHandler] Stream URL: $streamUrl');
+    print('[BmaAudioHandler] Artwork URI: $artworkUri');
 
     try {
       // Load the song first
-      await loadSong(song, streamUrl);
+      await loadSong(song, streamUrl, artworkUri: artworkUri);
 
       // Start playback (don't await - let it complete asynchronously)
       // The play() Future may not complete immediately, but playback will start
